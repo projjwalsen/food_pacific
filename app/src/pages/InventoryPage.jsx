@@ -1,0 +1,265 @@
+import { useMemo, useState } from 'react'
+import { Badge } from '../components/Badge'
+import { DataTable } from '../components/DataTable'
+import { Modal } from '../components/Modal'
+import { PageHeader } from '../components/PageHeader'
+import { SearchFilterBar } from '../components/SearchFilterBar'
+import { StatCard } from '../components/StatCard'
+import { useAuth } from '../context/AuthContext'
+import { useErp } from '../context/ErpContext'
+import { useToast } from '../context/ToastContext'
+
+export function InventoryPage() {
+  const { inventory, auditLogs, adjustInventory } = useErp()
+  const { currentUser } = useAuth()
+  const { showToast } = useToast()
+
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false)
+  const [selectedItemId, setSelectedItemId] = useState('')
+  const [adjustForm, setAdjustForm] = useState({ delta: '', reason: '' })
+
+  const stats = useMemo(() => {
+    const totalSkus = inventory.length
+    const raw = inventory.filter((i) => i.type === 'Raw').length
+    const finished = inventory.filter((i) => i.type === 'Finished').length
+    const lowStock = inventory.filter((i) => i.onHand <= i.reorderLevel).length
+    return { totalSkus, raw, finished, lowStock }
+  }, [inventory])
+
+  const filteredInventory = useMemo(
+    () =>
+      inventory.filter((i) => {
+        const matchesSearch =
+          !search ||
+          i.sku.toLowerCase().includes(search.toLowerCase()) ||
+          i.name.toLowerCase().includes(search.toLowerCase()) ||
+          i.category.toLowerCase().includes(search.toLowerCase())
+        const matchesType = typeFilter === 'all' || i.type === typeFilter
+        return matchesSearch && matchesType
+      }),
+    [inventory, search, typeFilter],
+  )
+
+  const lowStockItems = useMemo(
+    () => inventory.filter((i) => i.onHand <= i.reorderLevel),
+    [inventory],
+  )
+
+  const movements = useMemo(
+    () =>
+      auditLogs
+        .filter((a) => a.module === 'Inventory' || a.module === 'Production')
+        .slice(0, 10),
+    [auditLogs],
+  )
+
+  function handleFilterChange(key, value) {
+    if (key === 'type') setTypeFilter(value)
+  }
+
+  function openAdjustModal(itemId) {
+    setSelectedItemId(itemId)
+    setAdjustForm({ delta: '', reason: '' })
+    setAdjustModalOpen(true)
+  }
+
+  function handleAdjustSubmit(e) {
+    e.preventDefault()
+    const delta = Number(adjustForm.delta || 0)
+    if (!delta || !adjustForm.reason) return
+    adjustInventory(selectedItemId, delta, adjustForm.reason, currentUser)
+    showToast('Stock level adjusted.', 'success')
+    setAdjustModalOpen(false)
+  }
+
+  return (
+    <div className="page">
+      <PageHeader
+        title="Inventory overview"
+        subtitle="Live view of raw materials, packaging, and finished goods across Foods Pacific."
+      />
+
+      <section className="grid grid-4">
+        <StatCard
+          label="Active SKUs"
+          value={stats.totalSkus}
+          trend="Raw, packaging, and finished goods"
+          tone="primary"
+        />
+        <StatCard
+          label="Raw materials"
+          value={stats.raw}
+          trend="Ready for batching"
+          tone="accent"
+        />
+        <StatCard
+          label="Finished goods"
+          value={stats.finished}
+          trend="Available for order allocation"
+          tone="success"
+        />
+        <StatCard
+          label="Low stock alerts"
+          value={stats.lowStock}
+          trend="Below configured reorder level"
+          tone="danger"
+        />
+      </section>
+
+      <section className="grid grid-2">
+        <div className="card">
+          <div className="card-header">
+            <h3>Inventory by item</h3>
+            <span className="card-subtitle">With batch and expiry tracking</span>
+          </div>
+          <SearchFilterBar
+            search={search}
+            onSearchChange={setSearch}
+            filters={[
+              {
+                key: 'type',
+                value: typeFilter,
+                options: [
+                  { value: 'all', label: 'All types' },
+                  { value: 'Raw', label: 'Raw materials' },
+                  { value: 'Packaging', label: 'Packaging' },
+                  { value: 'Finished', label: 'Finished goods' },
+                ],
+              },
+            ]}
+            onFilterChange={handleFilterChange}
+            placeholder="Search by SKU, item, or category"
+          />
+          <DataTable
+            columns={[
+              { key: 'sku', header: 'SKU' },
+              { key: 'name', header: 'Item' },
+              { key: 'warehouse', header: 'Warehouse' },
+              { key: 'onHand', header: 'On hand' },
+              { key: 'reserved', header: 'Reserved' },
+              { key: 'reorderLevel', header: 'Reorder level' },
+              {
+                key: 'type',
+                header: 'Type',
+                render: (value) => <Badge tone="neutral">{value}</Badge>,
+              },
+              {
+                key: 'expiryDate',
+                header: 'Expiry',
+                render: (value) => value || 'N/A',
+              },
+              {
+                key: 'id',
+                header: '',
+                render: (value) => (
+                  <button type="button" className="link-button" onClick={() => openAdjustModal(value)}>
+                    Adjust
+                  </button>
+                ),
+              },
+            ]}
+            data={filteredInventory}
+          />
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <h3>Reorder suggestions</h3>
+            <span className="card-subtitle">Planning view</span>
+          </div>
+          {lowStockItems.length === 0 ? (
+            <div className="empty-state">
+              Inventory levels are currently above minimum safety thresholds.
+            </div>
+          ) : (
+            <ul className="summary-list">
+              {lowStockItems.map((item) => (
+                <li key={item.id}>
+                  <div>
+                    <div>{item.name}</div>
+                    <div className="muted">
+                      {item.sku} • {item.warehouse}
+                    </div>
+                  </div>
+                  <div>
+                    <div>
+                      On hand {item.onHand} {item.uom}
+                    </div>
+                    <div className="muted">
+                      Reorder at {item.reorderLevel} {item.uom}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="card-header card-header-spaced">
+            <h3>Recent stock movements</h3>
+          </div>
+          <ul className="timeline">
+            {movements.map((m) => (
+              <li key={m.id} className="timeline-item">
+                <div className="timeline-dot" />
+                <div className="timeline-content">
+                  <div className="timeline-header">
+                    <span className="timeline-module">{m.module}</span>
+                    <span className="timeline-time">{new Date(m.timestamp).toLocaleString()}</span>
+                  </div>
+                  <div className="timeline-title">{m.action}</div>
+                  <div className="timeline-body">{m.details}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <Modal
+        open={adjustModalOpen}
+        onClose={() => setAdjustModalOpen(false)}
+        title="Adjust stock level"
+        size="sm"
+      >
+        <form className="form-grid" onSubmit={handleAdjustSubmit}>
+          <label className="field">
+            <span className="field-label">Adjustment quantity</span>
+            <input
+              type="number"
+              className="input"
+              value={adjustForm.delta}
+              onChange={(e) => setAdjustForm({ ...adjustForm, delta: e.target.value })}
+              placeholder="Use negative value to reduce stock"
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Reason</span>
+            <input
+              type="text"
+              className="input"
+              value={adjustForm.reason}
+              onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}
+              required
+            />
+          </label>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="button ghost"
+              onClick={() => setAdjustModalOpen(false)}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="button primary">
+              Apply adjustment
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  )
+}
+
