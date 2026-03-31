@@ -13,6 +13,7 @@ export function SalesPage() {
   const { currentUser } = useAuth()
   const { showToast } = useToast()
 
+  const [activeTab, setActiveTab] = useState('orders')
   const [detailOrder, setDetailOrder] = useState(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [form, setForm] = useState({
@@ -33,6 +34,21 @@ export function SalesPage() {
       0
     return { open, dispatched, total, exportShare }
   }, [salesOrders])
+
+  const quotations = [
+    { id: 'QT-2401', customer: 'New Retailer X', date: '2026-04-01', amount: 15000, status: 'Draft' },
+    { id: 'QT-2402', customer: 'Global Export Co', date: '2026-04-03', amount: 85000, status: 'Sent' },
+    { id: 'QT-2403', customer: 'Local Hotel Chain', date: '2026-04-05', amount: 12000, status: 'Accepted' }
+  ]
+
+  const dispatchTracking = salesOrders.filter(o => o.status === 'Dispatched').map(o => ({
+    id: `TRK-${o.orderNumber.split('-')[1]}`,
+    orderNumber: o.orderNumber,
+    customer: o.customer,
+    carrier: 'Pacific Logistics',
+    status: 'In Transit',
+    eta: '2026-04-15'
+  }))
 
   function handleStatusChange(id, status) {
     updateSalesStatus(id, status, currentUser)
@@ -131,94 +147,189 @@ export function SalesPage() {
         />
       </section>
 
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="card-header">
-            <h3>Customer orders</h3>
-            <span className="card-subtitle">With dispatch status</span>
-          </div>
-          <DataTable
-            columns={[
-              { key: 'orderNumber', header: 'Order' },
-              { key: 'customer', header: 'Customer' },
-              { key: 'region', header: 'Region' },
-              {
-                key: 'amount',
-                header: 'Amount',
-                render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
-              },
-              {
-                key: 'status',
-                header: 'Status',
-                render: (value) => {
-                  const tone =
-                    value === 'Dispatched'
-                      ? 'success'
-                      : value === 'Packed'
-                        ? 'accent'
-                        : value === 'In Picking'
-                          ? 'warning'
-                          : 'neutral'
-                  return <Badge tone={tone}>{value}</Badge>
-                },
-              },
-              {
-                key: 'actions',
-                header: '',
-                render: (_, row) => (
-                  <div className="table-actions">
-                    <button type="button" className="link-button" onClick={() => openDetail(row)}>
-                      View
-                    </button>
-                    {row.status !== 'Dispatched' && (
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => handleStatusChange(row.id, 'Dispatched')}
-                      >
-                        Mark dispatched
-                      </button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-            data={salesOrders}
-          />
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>Top selling products</h3>
-            <span className="card-subtitle">By quantity ordered</span>
-          </div>
-          <ul className="summary-list">
-            {topProducts.map((p) => (
-              <li key={p.itemId}>
-                <span>{p.name}</span>
-                <span>{p.qty.toLocaleString()} units</span>
-              </li>
-            ))}
-          </ul>
-          <div className="card-header card-header-spaced">
-            <h3>Regional mix</h3>
-          </div>
-          <ul className="summary-list">
-            <li>
-              <span>Singapore</span>
-              <span>Core retail and food service accounts</span>
-            </li>
-            <li>
-              <span>ASEAN</span>
-              <span>Growing regional distribution footprint</span>
-            </li>
-            <li>
-              <span>Export</span>
-              <span>Strategic EU and online marketplace partners</span>
-            </li>
-          </ul>
+      <section className="tabs-container">
+        <div className="tabs">
+          <button
+            className={`tab ${activeTab === 'orders' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('orders')}
+          >
+            Sales Orders
+          </button>
+          <button
+            className={`tab ${activeTab === 'quotations' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('quotations')}
+          >
+            Quotations
+          </button>
+          <button
+            className={`tab ${activeTab === 'dispatch' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('dispatch')}
+          >
+            Dispatch Tracking
+          </button>
+          <button
+            className={`tab ${activeTab === 'analytics' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('analytics')}
+          >
+            Sales Analytics
+          </button>
         </div>
       </section>
+
+      {activeTab === 'orders' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Customer orders</h3>
+              <span className="card-subtitle">With dispatch status</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'orderNumber', header: 'Order' },
+                { key: 'customer', header: 'Customer' },
+                { key: 'region', header: 'Region' },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (value) => {
+                    const tone =
+                      value === 'Dispatched'
+                        ? 'success'
+                        : value === 'Packed'
+                          ? 'accent'
+                          : value === 'In Picking'
+                            ? 'warning'
+                            : 'neutral'
+                    return <Badge tone={tone}>{value}</Badge>
+                  },
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  render: (_, row) => (
+                    <div className="table-actions">
+                      <button type="button" className="link-button" onClick={() => openDetail(row)}>
+                        View
+                      </button>
+                      {row.status !== 'Dispatched' && (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => handleStatusChange(row.id, 'Dispatched')}
+                        >
+                          Mark dispatched
+                        </button>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+              data={salesOrders}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'quotations' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Active Quotations</h3>
+              <span className="card-subtitle">Pre-sales pipeline</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'id', header: 'Quote #' },
+                { key: 'customer', header: 'Customer' },
+                { key: 'date', header: 'Date' },
+                { key: 'amount', header: 'Value', render: (v) => v.toLocaleString() },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (v) => (
+                    <Badge
+                      tone={v === 'Accepted' ? 'success' : v === 'Sent' ? 'accent' : 'neutral'}
+                    >
+                      {v}
+                    </Badge>
+                  ),
+                },
+              ]}
+              data={quotations}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'dispatch' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Dispatch Tracking</h3>
+              <span className="card-subtitle">Real-time logistics status</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'id', header: 'Tracking #' },
+                { key: 'orderNumber', header: 'SO Reference' },
+                { key: 'customer', header: 'Customer' },
+                { key: 'carrier', header: 'Carrier' },
+                { key: 'eta', header: 'ETA' },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (v) => <Badge tone="accent">{v}</Badge>,
+                },
+              ]}
+              data={dispatchTracking}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'analytics' && (
+        <section className="grid grid-2">
+          <div className="card">
+            <div className="card-header">
+              <h3>Top selling products</h3>
+              <span className="card-subtitle">By quantity ordered</span>
+            </div>
+            <ul className="summary-list">
+              {topProducts.map((p) => (
+                <li key={p.itemId}>
+                  <span>{p.name}</span>
+                  <span>{p.qty.toLocaleString()} units</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Regional Performance</h3>
+              <span className="card-subtitle">Market share distribution</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Singapore</span>
+                <span>Core retail and food service accounts (45%)</span>
+              </li>
+              <li>
+                <span>ASEAN</span>
+                <span>Growing regional distribution footprint (30%)</span>
+              </li>
+              <li>
+                <span>Europe / Global</span>
+                <span>Strategic export partners (25%)</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+      )}
 
       <Modal
         open={detailOrder != null}

@@ -13,6 +13,7 @@ export function ProductionPage() {
   const { currentUser } = useAuth()
   const { showToast } = useToast()
 
+  const [activeTab, setActiveTab] = useState('orders')
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({
     productId: '',
@@ -30,6 +31,20 @@ export function ProductionPage() {
         Math.max(1, productionOrders.filter((p) => p.efficiency != null).length) || 0
     return { planned, running, completed, delayed, avgEff }
   }, [productionOrders])
+
+  const boms = [
+    { id: 'BOM-001', product: 'Premium Chili Sauce 500ml', materials: [
+      { itemId: 'i1', name: 'Sunflower Oil', qty: 0.5, uom: 'kg' },
+      { itemId: 'i2', name: 'Chili Flakes', qty: 0.08, uom: 'kg' },
+      { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' },
+      { itemId: 'i6', name: 'Metal Cap 500ml', qty: 1, uom: 'pcs' }
+    ]},
+    { id: 'BOM-002', product: 'Herb & Garlic Marinade 500ml', materials: [
+      { itemId: 'i10', name: 'Canola Oil', qty: 0.55, uom: 'kg' },
+      { itemId: 'i3', name: 'Basil Leaves', qty: 0.15, uom: 'kg' },
+      { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' }
+    ]}
+  ]
 
   function handleStatusChange(id, status) {
     if (status === 'Completed' && !window.confirm('Mark order as completed and update stock?')) {
@@ -104,99 +119,168 @@ export function ProductionPage() {
         />
       </section>
 
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="card-header">
-            <h3>Production orders</h3>
-            <span className="card-subtitle">By status and line</span>
-          </div>
-          <DataTable
-            columns={[
-              { key: 'orderNumber', header: 'Order' },
-              {
-                key: 'productId',
-                header: 'Product',
-                render: (value) => inventory.find((i) => i.id === value)?.name ?? value,
-              },
-              { key: 'line', header: 'Line' },
-              { key: 'plannedQty', header: 'Planned qty' },
-              { key: 'producedQty', header: 'Produced' },
-              {
-                key: 'status',
-                header: 'Status',
-                render: (value) => {
-                  const tone =
-                    value === 'Completed'
-                      ? 'success'
-                      : value === 'Running'
-                        ? 'accent'
-                        : value === 'Delayed'
-                          ? 'danger'
-                          : 'neutral'
-                  return <Badge tone={tone}>{value}</Badge>
-                },
-              },
-              {
-                key: 'efficiency',
-                header: 'Eff.',
-                render: (value) => (value != null ? `${value}%` : '—'),
-              },
-              {
-                key: 'actions',
-                header: '',
-                render: (_, row) => (
-                  <div className="table-actions">
-                    {row.status === 'Planned' && (
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => handleStatusChange(row.id, 'Running')}
-                      >
-                        Release
-                      </button>
-                    )}
-                    {row.status === 'Running' && (
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => handleStatusChange(row.id, 'Completed')}
-                      >
-                        Complete
-                      </button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-            data={productionOrders}
-          />
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>Line status</h3>
-            <span className="card-subtitle">Machine loading overview</span>
-          </div>
-          <ul className="summary-list">
-            <li>
-              <span>Sauce Line 1</span>
-              <span>Running • Chili sauce and teriyaki batches</span>
-            </li>
-            <li>
-              <span>Sauce Line 2</span>
-              <span>Completed • Herb marinade cycle closed</span>
-            </li>
-            <li>
-              <span>Sauce Line 3</span>
-              <span>Delayed • Investigating throughput variance</span>
-            </li>
-            <li>
-              <span>Export Line</span>
-              <span>Running • Export batch for EU partner</span>
-            </li>
-          </ul>
+      <section className="tabs-container">
+        <div className="tabs">
+          <button
+            className={`tab ${activeTab === 'orders' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('orders')}
+          >
+            Production Orders
+          </button>
+          <button
+            className={`tab ${activeTab === 'lines' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('lines')}
+          >
+            Line Status
+          </button>
+          <button
+            className={`tab ${activeTab === 'boms' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('boms')}
+          >
+            Bill of Materials (BOM)
+          </button>
         </div>
       </section>
+
+      {activeTab === 'orders' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Work orders</h3>
+              <span className="card-subtitle">By status and line</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'orderNumber', header: 'Order' },
+                {
+                  key: 'productId',
+                  header: 'Product',
+                  render: (value) => inventory.find((i) => i.id === value)?.name ?? value,
+                },
+                { key: 'line', header: 'Line' },
+                { key: 'plannedQty', header: 'Planned qty' },
+                { key: 'producedQty', header: 'Produced' },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (value) => {
+                    const tone =
+                      value === 'Completed'
+                        ? 'success'
+                        : value === 'Running'
+                          ? 'accent'
+                          : value === 'Delayed'
+                            ? 'danger'
+                            : 'neutral'
+                    return <Badge tone={tone}>{value}</Badge>
+                  },
+                },
+                {
+                  key: 'efficiency',
+                  header: 'Eff.',
+                  render: (value) => (value != null ? `${value}%` : '—'),
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  render: (_, row) => (
+                    <div className="table-actions">
+                      {row.status === 'Planned' && (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => handleStatusChange(row.id, 'Running')}
+                        >
+                          Release
+                        </button>
+                      )}
+                      {row.status === 'Running' && (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => handleStatusChange(row.id, 'Completed')}
+                        >
+                          Complete
+                        </button>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+              data={productionOrders}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'lines' && (
+        <section className="grid grid-2">
+          <div className="card">
+            <div className="card-header">
+              <h3>Active line loading</h3>
+              <span className="card-subtitle">Real-time throughput</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Sauce Line 1</span>
+                <span>Running • Chili sauce and teriyaki batches</span>
+              </li>
+              <li>
+                <span>Sauce Line 2</span>
+                <span>Completed • Herb marinade cycle closed</span>
+              </li>
+              <li>
+                <span>Sauce Line 3</span>
+                <span>Delayed • Investigating throughput variance</span>
+              </li>
+              <li>
+                <span>Export Line</span>
+                <span>Running • Export batch for EU partner</span>
+              </li>
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Raw Material Consumption</h3>
+              <span className="card-subtitle">WIP and staged materials</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Sunflower Oil</span>
+                <span>Consuming 2.8t for current PRO-2403001</span>
+              </li>
+              <li>
+                <span>Glass Bottles</span>
+                <span>40k units staged at Line 1 & 2</span>
+              </li>
+              <li>
+                <span>Chili Flakes</span>
+                <span>800kg reserved for next shift</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'boms' && (
+        <section className="grid grid-2">
+          {boms.map((bom) => (
+            <div key={bom.id} className="card">
+              <div className="card-header">
+                <h3>{bom.id}: {bom.product}</h3>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'name', header: 'Material' },
+                  { key: 'qty', header: 'Qty (per unit)' },
+                  { key: 'uom', header: 'UOM' },
+                ]}
+                data={bom.materials}
+              />
+            </div>
+          ))}
+        </section>
+      )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Create production order">
         <form className="form-grid" onSubmit={handleCreateOrder}>

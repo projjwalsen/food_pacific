@@ -8,6 +8,7 @@ export function ReportsPage() {
   const { invoices, salesOrders, productionOrders, inventory } = useErp()
   const { showToast } = useToast()
 
+  const [activeTab, setActiveTab] = useState('summary')
   const [period, setPeriod] = useState('month')
 
   const metrics = useMemo(() => {
@@ -35,6 +36,13 @@ export function ReportsPage() {
     }
   }, [invoices, inventory, productionOrders, salesOrders])
 
+  const salesTrends = [
+    { month: 'Jan', revenue: 450000, target: 400000 },
+    { month: 'Feb', revenue: 480000, target: 410000 },
+    { month: 'Mar', revenue: 520000, target: 420000 },
+    { month: 'Apr', revenue: metrics.revenue, target: 450000 }
+  ]
+
   function handleExport(which) {
     showToast(`Generating ${which} report for ${period === 'month' ? 'this month' : 'this quarter'}.`, 'info')
   }
@@ -61,118 +69,241 @@ export function ReportsPage() {
         }
       />
 
-      <section className="grid grid-4">
-        <StatCard
-          label="Revenue"
-          value={`$${metrics.revenue.toLocaleString()}`}
-          trend="Consolidated across segments"
-          tone="primary"
-        />
-        <StatCard
-          label="Gross profit"
-          value={`$${metrics.grossProfit.toLocaleString()}`}
-          trend={`Margin ${metrics.margin.toFixed(1)}%`}
-          tone="success"
-        />
-        <StatCard
-          label="Inventory turnover index"
-          value={metrics.turnover.toLocaleString()}
-          trend="Based on finished goods on hand"
-          tone="neutral"
-        />
-        <StatCard
-          label="On-time production"
-          value={`${metrics.onTimeOrders}/${metrics.completedOrders}`}
-          trend="Orders completed at or above planned efficiency"
-          tone="accent"
-        />
-      </section>
-
-      <section className="grid grid-3">
-        <div className="card">
-          <div className="card-header">
-            <h3>Budget vs forecast</h3>
-            <span className="card-subtitle">Finance</span>
-          </div>
-          <ul className="summary-list">
-            <li>
-              <span>Revenue</span>
-              <span>Tracking slightly ahead of annual budget.</span>
-            </li>
-            <li>
-              <span>Gross margin</span>
-              <span>Mix uplift from premium export SKUs.</span>
-            </li>
-            <li>
-              <span>Operating expenses</span>
-              <span>Stable despite additional production shifts.</span>
-            </li>
-          </ul>
+      <section className="tabs-container">
+        <div className="tabs">
           <button
-            type="button"
-            className="button ghost block"
-            onClick={() => handleExport('finance')}
+            className={`tab ${activeTab === 'summary' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('summary')}
           >
-            Export finance summary
+            Management Summary
           </button>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>Profitability by product</h3>
-            <span className="card-subtitle">Product and channel lens</span>
-          </div>
-          <ul className="summary-list">
-            <li>
-              <span>Premium Chili Sauce 500ml</span>
-              <span>Flagship, high-margin SKU with strong retail pull.</span>
-            </li>
-            <li>
-              <span>Herb & Garlic Marinade 500ml</span>
-              <span>Balanced margin with high volume in food service.</span>
-            </li>
-            <li>
-              <span>Teriyaki Cooking Sauce 1L</span>
-              <span>Growing in export markets with promotional support.</span>
-            </li>
-          </ul>
           <button
-            type="button"
-            className="button ghost block"
-            onClick={() => handleExport('product')}
+            className={`tab ${activeTab === 'profitability' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('profitability')}
           >
-            Export product view
+            Profitability Analysis
           </button>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>Manufacturing performance</h3>
-            <span className="card-subtitle">Operations</span>
-          </div>
-          <ul className="summary-list">
-            <li>
-              <span>Yield and scrap</span>
-              <span>Within tolerance across main lines.</span>
-            </li>
-            <li>
-              <span>Changeover time</span>
-              <span>Improved on export line after SMED exercise.</span>
-            </li>
-            <li>
-              <span>Planned vs actual hours</span>
-              <span>Aligned for core product families.</span>
-            </li>
-          </ul>
           <button
-            type="button"
-            className="button ghost block"
-            onClick={() => handleExport('operations')}
+            className={`tab ${activeTab === 'sales_trends' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('sales_trends')}
           >
-            Export operations view
+            Sales Trends
+          </button>
+          <button
+            className={`tab ${activeTab === 'ops' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('ops')}
+          >
+            Operational Efficiency
           </button>
         </div>
       </section>
+
+      {activeTab === 'summary' && (
+        <>
+          <section className="grid grid-4">
+            <StatCard
+              label="Revenue"
+              value={`$${metrics.revenue.toLocaleString()}`}
+              trend="Consolidated across segments"
+              tone="primary"
+            />
+            <StatCard
+              label="Gross profit"
+              value={`$${metrics.grossProfit.toLocaleString()}`}
+              trend={`Margin ${metrics.margin.toFixed(1)}%`}
+              tone="success"
+            />
+            <StatCard
+              label="Inventory turnover index"
+              value={metrics.turnover.toLocaleString()}
+              trend="Based on finished goods on hand"
+              tone="neutral"
+            />
+            <StatCard
+              label="On-time production"
+              value={`${metrics.onTimeOrders}/${metrics.completedOrders}`}
+              trend="Orders completed at or above planned efficiency"
+              tone="accent"
+            />
+          </section>
+
+          <section className="grid grid-3">
+            <div className="card">
+              <div className="card-header">
+                <h3>Budget vs forecast</h3>
+                <span className="card-subtitle">Finance</span>
+              </div>
+              <ul className="summary-list">
+                <li>
+                  <span>Revenue</span>
+                  <span>Tracking slightly ahead of annual budget.</span>
+                </li>
+                <li>
+                  <span>Gross margin</span>
+                  <span>Mix uplift from premium export SKUs.</span>
+                </li>
+                <li>
+                  <span>Operating expenses</span>
+                  <span>Stable despite additional production shifts.</span>
+                </li>
+              </ul>
+              <button
+                type="button"
+                className="button ghost block"
+                onClick={() => handleExport('finance')}
+              >
+                Export finance summary
+              </button>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h3>Profitability by product</h3>
+                <span className="card-subtitle">Product and channel lens</span>
+              </div>
+              <ul className="summary-list">
+                <li>
+                  <span>Premium Chili Sauce 500ml</span>
+                  <span>Flagship, high-margin SKU with strong retail pull.</span>
+                </li>
+                <li>
+                  <span>Herb & Garlic Marinade 500ml</span>
+                  <span>Balanced margin with high volume in food service.</span>
+                </li>
+                <li>
+                  <span>Teriyaki Cooking Sauce 1L</span>
+                  <span>Growing in export markets with promotional support.</span>
+                </li>
+              </ul>
+              <button
+                type="button"
+                className="button ghost block"
+                onClick={() => handleExport('product')}
+              >
+                Export product view
+              </button>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h3>Manufacturing performance</h3>
+                <span className="card-subtitle">Operations</span>
+              </div>
+              <ul className="summary-list">
+                <li>
+                  <span>Yield and scrap</span>
+                  <span>Within tolerance across main lines.</span>
+                </li>
+                <li>
+                  <span>Changeover time</span>
+                  <span>Improved on export line after SMED exercise.</span>
+                </li>
+                <li>
+                  <span>Planned vs actual hours</span>
+                  <span>Aligned for core product families.</span>
+                </li>
+              </ul>
+              <button
+                type="button"
+                className="button ghost block"
+                onClick={() => handleExport('operations')}
+              >
+                Export operations view
+              </button>
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'profitability' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Detailed Profitability Analysis</h3>
+              <span className="card-subtitle">By Product Family</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'family', header: 'Product Family' },
+                { key: 'revenue', header: 'Revenue ($)', render: (v) => v.toLocaleString() },
+                { key: 'cogs', header: 'COGS ($)', render: (v) => v.toLocaleString() },
+                { key: 'grossProfit', header: 'Gross Profit ($)', render: (v) => v.toLocaleString() },
+                { key: 'margin', header: 'Margin (%)' },
+              ]}
+              data={[
+                { family: 'Chili Sauces', revenue: 250000, cogs: 145000, grossProfit: 105000, margin: '42%' },
+                { family: 'Marinades', revenue: 180000, cogs: 110000, grossProfit: 70000, margin: '39%' },
+                { family: 'Cooking Sauces', revenue: 120000, cogs: 85000, grossProfit: 35000, margin: '29%' },
+              ]}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'sales_trends' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Sales Trends vs Target</h3>
+              <span className="card-subtitle">Monthly Performance</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'month', header: 'Month' },
+                { key: 'revenue', header: 'Actual Revenue ($)', render: (v) => v.toLocaleString() },
+                { key: 'target', header: 'Target Revenue ($)', render: (v) => v.toLocaleString() },
+                {
+                  key: 'variance',
+                  header: 'Variance',
+                  render: (_, row) => {
+                    const varVal = ((row.revenue - row.target) / row.target) * 100
+                    return (
+                      <Badge tone={varVal >= 0 ? 'success' : 'danger'}>
+                        {varVal >= 0 ? '+' : ''}
+                        {varVal.toFixed(1)}%
+                      </Badge>
+                    )
+                  },
+                },
+              ]}
+              data={salesTrends}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'ops' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Operational Efficiency Matrix</h3>
+              <span className="card-subtitle">Plant Performance</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'line', header: 'Production Line' },
+                { key: 'availability', header: 'Availability (%)' },
+                { key: 'performance', header: 'Performance (%)' },
+                { key: 'quality', header: 'Quality (%)' },
+                {
+                  key: 'oee',
+                  header: 'OEE (%)',
+                  render: (_, row) => (
+                    <strong>
+                      {((row.availability * row.performance * row.quality) / 10000).toFixed(1)}%
+                    </strong>
+                  ),
+                },
+              ]}
+              data={[
+                { line: 'Sauce Line 1', availability: 92, performance: 88, quality: 99 },
+                { line: 'Sauce Line 2', availability: 85, performance: 92, quality: 98 },
+                { line: 'Export Line', availability: 95, performance: 90, quality: 99.5 },
+              ]}
+            />
+          </div>
+        </section>
+      )}
     </div>
   )
 }

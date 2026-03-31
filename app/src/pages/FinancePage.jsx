@@ -13,6 +13,7 @@ export function FinancePage() {
   const { currentUser } = useAuth()
   const { showToast } = useToast()
 
+  const [activeTab, setActiveTab] = useState('ar_ap')
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [invoiceForm, setInvoiceForm] = useState({
@@ -53,6 +54,28 @@ export function FinancePage() {
       paid,
     }
   }, [invoices, purchaseOrders])
+
+  const glData = [
+    { account: '1001', name: 'Main Operating Bank', balance: 145000, type: 'Asset' },
+    { account: '1100', name: 'Accounts Receivable', balance: summary.receivables, type: 'Asset' },
+    { account: '1200', name: 'Inventory Asset', balance: 84000, type: 'Asset' },
+    { account: '2100', name: 'Accounts Payable', balance: summary.payables, type: 'Liability' },
+    { account: '3100', name: 'Retained Earnings', balance: summary.actual, type: 'Equity' },
+    { account: '4100', name: 'Sales Revenue', balance: summary.totalRevenue, type: 'Income' },
+  ]
+
+  const fixedAssets = [
+    { id: 'FA-001', name: 'Sauce Line 1', value: 450000, depreciation: 45000, net: 405000 },
+    { id: 'FA-002', name: 'Sauce Line 2', value: 380000, depreciation: 38000, net: 342000 },
+    { id: 'FA-003', name: 'Main FG Warehouse', value: 1200000, depreciation: 24000, net: 1176000 },
+  ]
+
+  const bankRec = [
+    { date: '2026-03-31', reference: 'Statement Ending Balance', amount: 148500, type: 'Statement' },
+    { date: '2026-04-01', reference: 'Outstanding Check #1042', amount: -2500, type: 'Adjustment' },
+    { date: '2026-04-01', reference: 'Deposit in Transit', amount: 1000, type: 'Adjustment' },
+    { date: '2026-04-01', reference: 'Adjusted Bank Balance', amount: 147000, type: 'Total' },
+  ]
 
   function handleInvoiceSubmit(e) {
     e.preventDefault()
@@ -156,71 +179,177 @@ export function FinancePage() {
         />
       </section>
 
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="card-header">
-            <h3>Invoices</h3>
-            <span className="card-subtitle">Receivables</span>
-          </div>
-          <DataTable
-            columns={[
-              { key: 'invoiceNumber', header: 'Invoice' },
-              { key: 'customer', header: 'Customer' },
-              {
-                key: 'amount',
-                header: 'Amount',
-                render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
-              },
-              { key: 'issueDate', header: 'Issue date' },
-              { key: 'dueDate', header: 'Due date' },
-              {
-                key: 'status',
-                header: 'Status',
-                render: (value) => (
-                  <Badge
-                    tone={
-                      value === 'Paid'
-                        ? 'success'
-                        : value === 'Partially Paid'
-                          ? 'warning'
-                          : 'danger'
-                    }
-                  >
-                    {value}
-                  </Badge>
-                ),
-              },
-            ]}
-            data={invoices}
-          />
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>Payments</h3>
-            <span className="card-subtitle">Cash movement</span>
-          </div>
-          <DataTable
-            columns={[
-              { key: 'paymentNumber', header: 'Payment' },
-              { key: 'invoiceId', header: 'Invoice ID' },
-              { key: 'date', header: 'Date' },
-              { key: 'method', header: 'Method' },
-              {
-                key: 'amount',
-                header: 'Amount',
-                render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
-              },
-              {
-                key: 'status',
-                header: 'Status',
-                render: (value) => <Badge tone={value === 'Posted' ? 'success' : 'neutral'}>{value}</Badge>,
-              },
-            ]}
-            data={payments}
-          />
+      <section className="tabs-container">
+        <div className="tabs">
+          <button
+            className={`tab ${activeTab === 'ar_ap' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('ar_ap')}
+          >
+            Receivables & Payables
+          </button>
+          <button
+            className={`tab ${activeTab === 'gl' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('gl')}
+          >
+            General Ledger
+          </button>
+          <button
+            className={`tab ${activeTab === 'bank' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('bank')}
+          >
+            Bank Reconciliation
+          </button>
+          <button
+            className={`tab ${activeTab === 'assets' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('assets')}
+          >
+            Fixed Assets
+          </button>
         </div>
       </section>
+
+      {activeTab === 'ar_ap' && (
+        <section className="grid grid-2">
+          <div className="card">
+            <div className="card-header">
+              <h3>Invoices</h3>
+              <span className="card-subtitle">Receivables</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'invoiceNumber', header: 'Invoice' },
+                { key: 'customer', header: 'Customer' },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
+                },
+                { key: 'issueDate', header: 'Issue date' },
+                { key: 'dueDate', header: 'Due date' },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (value) => (
+                    <Badge
+                      tone={
+                        value === 'Paid'
+                          ? 'success'
+                          : value === 'Partially Paid'
+                            ? 'warning'
+                            : 'danger'
+                      }
+                    >
+                      {value}
+                    </Badge>
+                  ),
+                },
+              ]}
+              data={invoices}
+            />
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <h3>Payments</h3>
+              <span className="card-subtitle">Cash movement</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'paymentNumber', header: 'Payment' },
+                { key: 'invoiceId', header: 'Invoice ID' },
+                { key: 'date', header: 'Date' },
+                { key: 'method', header: 'Method' },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (value) => (
+                    <Badge tone={value === 'Posted' ? 'success' : 'neutral'}>{value}</Badge>
+                  ),
+                },
+              ]}
+              data={payments}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'gl' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>General Ledger Summary</h3>
+              <span className="card-subtitle">Trial balance snapshot</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'account', header: 'Account #' },
+                { key: 'name', header: 'Account Name' },
+                { key: 'type', header: 'Type' },
+                {
+                  key: 'balance',
+                  header: 'Balance (SGD)',
+                  render: (v) => v.toLocaleString(),
+                },
+              ]}
+              data={glData}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'bank' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Bank Reconciliation</h3>
+              <span className="card-subtitle">Last reconciled: 2026-03-31</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'date', header: 'Date' },
+                { key: 'reference', header: 'Reference' },
+                { key: 'type', header: 'Type' },
+                {
+                  key: 'amount',
+                  header: 'Amount (SGD)',
+                  render: (v) => (
+                    <span style={{ color: v < 0 ? 'var(--danger)' : 'inherit' }}>
+                      {v.toLocaleString()}
+                    </span>
+                  ),
+                },
+              ]}
+              data={bankRec}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'assets' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Fixed Assets</h3>
+              <span className="card-subtitle">Plant, Property & Equipment</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'id', header: 'Asset ID' },
+                { key: 'name', header: 'Asset Name' },
+                { key: 'value', header: 'Original Value', render: (v) => v.toLocaleString() },
+                { key: 'depreciation', header: 'Accum. Depr.', render: (v) => v.toLocaleString() },
+                { key: 'net', header: 'Net Book Value', render: (v) => v.toLocaleString() },
+              ]}
+              data={fixedAssets}
+            />
+          </div>
+        </section>
+      )}
 
       <Modal
         open={invoiceModalOpen}

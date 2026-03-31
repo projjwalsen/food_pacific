@@ -22,6 +22,7 @@ export function ProcurementPage() {
   const { currentUser } = useAuth()
   const { showToast } = useToast()
 
+  const [activeTab, setActiveTab] = useState('requisitions')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [requisitionModalOpen, setRequisitionModalOpen] = useState(false)
@@ -39,6 +40,26 @@ export function ProcurementPage() {
     const openPo = purchaseOrders.filter((po) => po.status === 'Open').length
     return { pending, approved, rejected, openPo }
   }, [purchaseRequisitions, purchaseOrders])
+
+  const rfqs = [
+    { id: 'RFQ-001', item: 'Sunflower Oil', suppliers: [
+      { name: 'Pacific Agro', price: 8.5, leadTime: 7, rating: 'A' },
+      { name: 'Pure Oils Asia', price: 8.2, leadTime: 12, rating: 'B' },
+      { name: 'Global Spice', price: 8.9, leadTime: 5, rating: 'A' }
+    ]},
+    { id: 'RFQ-002', item: 'Glass Bottle 500ml', suppliers: [
+      { name: 'Premium Packaging', price: 0.45, leadTime: 14, rating: 'A' },
+      { name: 'Regional Logistics', price: 0.48, leadTime: 4, rating: 'A' }
+    ]}
+  ]
+
+  const grns = purchaseOrders.filter(po => po.status === 'Received' || po.status === 'Partially Received').map(po => ({
+    id: `GRN-${po.poNumber.split('-')[1]}`,
+    poNumber: po.poNumber,
+    receivedDate: po.orderDate, // Mocking received date
+    supplier: suppliers.find(s => s.id === po.supplierId)?.name,
+    status: 'Verified'
+  }))
 
   const filteredRequisitions = useMemo(
     () =>
@@ -146,123 +167,258 @@ export function ProcurementPage() {
         />
       </section>
 
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="card-header">
-            <h3>Purchase requisitions</h3>
-            <span className="card-subtitle">With approval workflow</span>
-          </div>
-          <SearchFilterBar
-            search={search}
-            onSearchChange={setSearch}
-            filters={[
-              {
-                key: 'status',
-                value: statusFilter,
-                options: [
-                  { value: 'all', label: 'All statuses' },
-                  { value: 'Pending Approval', label: 'Pending approval' },
-                  { value: 'Approved', label: 'Approved' },
-                  { value: 'Rejected', label: 'Rejected' },
-                ],
-              },
-            ]}
-            onFilterChange={handleFilterChange}
-            placeholder="Search by requisition, supplier, or item"
-          />
-          <DataTable
-            columns={[
-              { key: 'reqNumber', header: 'Requisition' },
-              {
-                key: 'supplierId',
-                header: 'Supplier',
-                render: (value) => suppliers.find((s) => s.id === value)?.name ?? value,
-              },
-              {
-                key: 'itemId',
-                header: 'Item',
-                render: (value) => inventory.find((i) => i.id === value)?.name ?? value,
-              },
-              { key: 'quantity', header: 'Qty' },
-              { key: 'requiredDate', header: 'Required' },
-              {
-                key: 'status',
-                header: 'Status',
-                render: (value) => (
-                  <Badge
-                    tone={
-                      value === 'Approved'
-                        ? 'success'
-                        : value === 'Rejected'
-                          ? 'danger'
-                          : 'warning'
-                    }
-                  >
-                    {value}
-                  </Badge>
-                ),
-              },
-              {
-                key: 'actions',
-                header: '',
-                render: (_, row) => (
-                  <div className="table-actions">
-                    {row.status === 'Pending Approval' && (
-                      <>
+      <section className="tabs-container">
+        <div className="tabs">
+          <button
+            className={`tab ${activeTab === 'requisitions' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('requisitions')}
+          >
+            Requisitions
+          </button>
+          <button
+            className={`tab ${activeTab === 'pos' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('pos')}
+          >
+            Purchase Orders
+          </button>
+          <button
+            className={`tab ${activeTab === 'rfqs' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('rfqs')}
+          >
+            RFQ Comparison
+          </button>
+          <button
+            className={`tab ${activeTab === 'grns' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('grns')}
+          >
+            GRN Tracking
+          </button>
+          <button
+            className={`tab ${activeTab === 'suppliers' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('suppliers')}
+          >
+            Suppliers
+          </button>
+        </div>
+      </section>
+
+      {activeTab === 'requisitions' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Purchase requisitions</h3>
+              <span className="card-subtitle">With approval workflow</span>
+            </div>
+            <SearchFilterBar
+              search={search}
+              onSearchChange={setSearch}
+              filters={[
+                {
+                  key: 'status',
+                  value: statusFilter,
+                  options: [
+                    { value: 'all', label: 'All statuses' },
+                    { value: 'Pending Approval', label: 'Pending approval' },
+                    { value: 'Approved', label: 'Approved' },
+                    { value: 'Rejected', label: 'Rejected' },
+                  ],
+                },
+              ]}
+              onFilterChange={handleFilterChange}
+              placeholder="Search by requisition, supplier, or item"
+            />
+            <DataTable
+              columns={[
+                { key: 'reqNumber', header: 'Requisition' },
+                {
+                  key: 'supplierId',
+                  header: 'Supplier',
+                  render: (value) => suppliers.find((s) => s.id === value)?.name ?? value,
+                },
+                {
+                  key: 'itemId',
+                  header: 'Item',
+                  render: (value) => inventory.find((i) => i.id === value)?.name ?? value,
+                },
+                { key: 'quantity', header: 'Qty' },
+                { key: 'requiredDate', header: 'Required' },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (value) => (
+                    <Badge
+                      tone={
+                        value === 'Approved'
+                          ? 'success'
+                          : value === 'Rejected'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    >
+                      {value}
+                    </Badge>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  render: (_, row) => (
+                    <div className="table-actions">
+                      {row.status === 'Pending Approval' && (
+                        <>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => handleApprove(row.id)}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="link-button subtle"
+                            onClick={() => handleReject(row.id)}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {row.status === 'Approved' && (
                         <button
                           type="button"
                           className="link-button"
-                          onClick={() => handleApprove(row.id)}
+                          onClick={() => handleCreatePo(row.id)}
                         >
-                          Approve
+                          Create PO
                         </button>
-                        <button
-                          type="button"
-                          className="link-button subtle"
-                          onClick={() => handleReject(row.id)}
-                        >
-                          Reject
-                        </button>
-                      </>
-                    )}
-                    {row.status === 'Approved' && (
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => handleCreatePo(row.id)}
-                      >
-                        Create PO
-                      </button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-            data={filteredRequisitions}
-          />
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>Suppliers</h3>
-            <span className="card-subtitle">Strategic partner overview</span>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+              data={filteredRequisitions}
+            />
           </div>
-          <DataTable
-            columns={[
-              { key: 'code', header: 'Code' },
-              { key: 'name', header: 'Supplier' },
-              { key: 'category', header: 'Category' },
-              { key: 'leadTimeDays', header: 'Lead time (days)' },
-              {
-                key: 'rating',
-                header: 'Rating',
-                render: (value) => <Badge tone={value === 'A' ? 'success' : 'neutral'}>{value}</Badge>,
-              },
-            ]}
-            data={suppliers}
-          />
-        </div>
-      </section>
+        </section>
+      )}
+
+      {activeTab === 'pos' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Purchase Orders</h3>
+              <span className="card-subtitle">Open and historical POs</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'poNumber', header: 'PO #' },
+                {
+                  key: 'supplierId',
+                  header: 'Supplier',
+                  render: (v) => suppliers.find((s) => s.id === v)?.name,
+                },
+                { key: 'orderDate', header: 'Ordered' },
+                { key: 'expectedDate', header: 'Expected' },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  render: (v, row) => `${row.currency} ${v.toLocaleString()}`,
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (v) => (
+                    <Badge
+                      tone={
+                        v === 'Received' ? 'success' : v === 'Cancelled' ? 'danger' : 'warning'
+                      }
+                    >
+                      {v}
+                    </Badge>
+                  ),
+                },
+              ]}
+              data={purchaseOrders}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'rfqs' && (
+        <section className="grid grid-2">
+          {rfqs.map((rfq) => (
+            <div key={rfq.id} className="card">
+              <div className="card-header">
+                <h3>{rfq.id}: {rfq.item}</h3>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'name', header: 'Supplier' },
+                  { key: 'price', header: 'Price ($)' },
+                  { key: 'leadTime', header: 'Lead Time (d)' },
+                  {
+                    key: 'rating',
+                    header: 'Rating',
+                    render: (v) => <Badge tone={v === 'A' ? 'success' : 'warning'}>{v}</Badge>,
+                  },
+                ]}
+                data={rfq.suppliers}
+              />
+            </div>
+          ))}
+        </section>
+      )}
+
+      {activeTab === 'grns' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Goods Receipt Notes (GRN)</h3>
+              <span className="card-subtitle">Verified receipts from suppliers</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'id', header: 'GRN #' },
+                { key: 'poNumber', header: 'PO Reference' },
+                { key: 'supplier', header: 'Supplier' },
+                { key: 'receivedDate', header: 'Received Date' },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (v) => <Badge tone="success">{v}</Badge>,
+                },
+              ]}
+              data={grns}
+            />
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'suppliers' && (
+        <section className="grid grid-1">
+          <div className="card">
+            <div className="card-header">
+              <h3>Supplier Registry</h3>
+              <span className="card-subtitle">Strategic partner overview</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'code', header: 'Code' },
+                { key: 'name', header: 'Supplier' },
+                { key: 'category', header: 'Category' },
+                { key: 'leadTimeDays', header: 'Lead time (days)' },
+                {
+                  key: 'rating',
+                  header: 'Rating',
+                  render: (value) => (
+                    <Badge tone={value === 'A' ? 'success' : 'neutral'}>{value}</Badge>
+                  ),
+                },
+              ]}
+              data={suppliers}
+            />
+          </div>
+        </section>
+      )}
 
       <Modal
         open={requisitionModalOpen}
