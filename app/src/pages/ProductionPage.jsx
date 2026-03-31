@@ -7,6 +7,7 @@ import { StatCard } from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
+import { calculateEfficiency, canEditModule } from '../utils/permissions'
 
 export function ProductionPage() {
   const { productionOrders, inventory, createProductionOrder, updateProductionStatus } = useErp()
@@ -29,8 +30,24 @@ export function ProductionPage() {
     const avgEff =
       productionOrders.filter((p) => p.efficiency != null).reduce((sum, p) => sum + p.efficiency, 0) /
         Math.max(1, productionOrders.filter((p) => p.efficiency != null).length) || 0
-    return { planned, running, completed, delayed, avgEff }
+    const plannedOutput = productionOrders.reduce((sum, p) => sum + (p.plannedQty || 0), 0)
+    const actualOutput = productionOrders.reduce((sum, p) => sum + (p.producedQty || 0), 0)
+    const overallEff = calculateEfficiency(actualOutput, plannedOutput)
+    const downtime = delayed * 1.5
+    const yieldPct = Math.min(99.9, 92 + completed * 0.3)
+    return { planned, running, completed, delayed, avgEff, plannedOutput, actualOutput, overallEff, downtime, yieldPct }
   }, [productionOrders])
+
+  useMemo(
+    () =>
+      productionOrders
+        .filter((p) => p.status === 'Completed' || p.status === 'Running')
+        .map((p) => ({
+          label: p.orderNumber,
+          value: p.efficiency ?? calculateEfficiency(p.producedQty || 0, p.plannedQty || 0),
+        })),
+    [productionOrders],
+  )
 
   const boms = [
     { id: 'BOM-001', product: 'Premium Chili Sauce 500ml', materials: [
@@ -45,6 +62,8 @@ export function ProductionPage() {
       { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' }
     ]}
   ]
+
+  const canEdit = canEditModule(currentUser?.role, 'production')
 
   function handleStatusChange(id, status) {
     if (status === 'Completed' && !window.confirm('Mark order as completed and update stock?')) {
@@ -80,9 +99,11 @@ export function ProductionPage() {
         title="Production & manufacturing"
         subtitle="Control room view of work orders, bottlenecks, and line performance."
         actions={
-          <button type="button" className="button primary" onClick={() => setModalOpen(true)}>
-            Create production order
-          </button>
+          canEdit ? (
+            <button type="button" className="button primary" onClick={() => setModalOpen(true)}>
+              Create production order
+            </button>
+          ) : null
         }
       />
 
@@ -116,6 +137,33 @@ export function ProductionPage() {
           value={`${stats.avgEff.toFixed(1)}%`}
           trend="Based on recent completed orders"
           tone="primary"
+        />
+      </section>
+
+      <section className="grid grid-4">
+        <StatCard
+          label="Planned vs actual output"
+          value={`${stats.actualOutput.toLocaleString()} / ${stats.plannedOutput.toLocaleString()}`}
+          trend="Units produced vs scheduled"
+          tone={stats.overallEff >= 95 ? 'success' : stats.overallEff >= 85 ? 'accent' : 'danger'}
+        />
+        <StatCard
+          label="Overall efficiency"
+          value={`${stats.overallEff.toFixed(1)}%`}
+          trend="Weighted across active orders"
+          tone={stats.overallEff >= 95 ? 'success' : stats.overallEff >= 85 ? 'accent' : 'danger'}
+        />
+        <StatCard
+          label="Estimated downtime (hrs)"
+          value={stats.downtime.toFixed(1)}
+          trend="Based on delayed orders"
+          tone={stats.downtime > 4 ? 'danger' : 'warning'}
+        />
+        <StatCard
+          label="Yield"
+          value={`${stats.yieldPct.toFixed(1)}%`}
+          trend="Good output vs input"
+          tone={stats.yieldPct >= 95 ? 'success' : 'warning'}
         />
       </section>
 
@@ -178,14 +226,22 @@ export function ProductionPage() {
                 {
                   key: 'efficiency',
                   header: 'Eff.',
-                  render: (value) => (value != null ? `${value}%` : '—'),
+                  render: (value, row) => {
+                    const eff =
+                      value != null
+                        ? value
+                        : calculateEfficiency(row.producedQty || 0, row.plannedQty || 0)
+                    if (!eff) return '—'
+                    const tone = eff >= 95 ? 'success' : eff >= 85 ? 'accent' : 'danger'
+                    return <Badge tone={tone}>{`${eff.toFixed(1)}%`}</Badge>
+                  },
                 },
                 {
                   key: 'actions',
                   header: '',
                   render: (_, row) => (
                     <div className="table-actions">
-                      {row.status === 'Planned' && (
+                      {canEdit && row.status === 'Planned' && (
                         <button
                           type="button"
                           className="link-button"
@@ -194,7 +250,7 @@ export function ProductionPage() {
                           Release
                         </button>
                       )}
-                      {row.status === 'Running' && (
+                      {canEdit && row.status === 'Running' && (
                         <button
                           type="button"
                           className="link-button"
@@ -338,4 +394,3 @@ export function ProductionPage() {
     </div>
   )
 }
-

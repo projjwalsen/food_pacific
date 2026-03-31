@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { authCredentials, demoUsers } from '../data/dummyData'
 import { loadSession, saveSession } from '../utils/storage'
+import { logSecurityEvent } from '../utils/security'
 
 const AuthContext = createContext(null)
 
@@ -36,12 +37,19 @@ export function AuthProvider({ children }) {
     }
 
     setCurrentUser(user)
+    logSecurityEvent('Login Successful', `User ${user.email} signed in.`, user)
     return { success: true, user }
   }
 
-  function logout() {
-    setCurrentUser(null)
-  }
+  const logout = useMemo(
+    () => () => {
+      if (currentUser) {
+        logSecurityEvent('Logout', `User ${currentUser.email} signed out.`, currentUser)
+      }
+      setCurrentUser(null)
+    },
+    [currentUser],
+  )
 
   const value = useMemo(
     () => ({
@@ -50,7 +58,7 @@ export function AuthProvider({ children }) {
       login,
       logout,
     }),
-    [currentUser],
+    [currentUser, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
+import { Badge } from '../components/Badge'
+import { DataTable } from '../components/DataTable'
 import { PageHeader } from '../components/PageHeader'
 import { StatCard } from '../components/StatCard'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
+import { generateForecast } from '../utils/permissions'
 
 export function ReportsPage() {
   const { invoices, salesOrders, productionOrders, inventory } = useErp()
@@ -10,6 +13,7 @@ export function ReportsPage() {
 
   const [activeTab, setActiveTab] = useState('summary')
   const [period, setPeriod] = useState('month')
+  const [forecastHorizon, setForecastHorizon] = useState('next_month')
 
   const metrics = useMemo(() => {
     const revenue = invoices.reduce((sum, inv) => sum + inv.amount, 0)
@@ -36,11 +40,15 @@ export function ReportsPage() {
     }
   }, [invoices, inventory, productionOrders, salesOrders])
 
+  const salesHistory = invoices.map((inv) => inv.amount).slice(0, 12)
+  const revenueForecast = generateForecast(salesHistory)
+
   const salesTrends = [
     { month: 'Jan', revenue: 450000, target: 400000 },
     { month: 'Feb', revenue: 480000, target: 410000 },
     { month: 'Mar', revenue: 520000, target: 420000 },
-    { month: 'Apr', revenue: metrics.revenue, target: 450000 }
+    { month: 'Apr', revenue: metrics.revenue, target: 450000 },
+    { month: 'Forecast', revenue: revenueForecast.next, target: 460000 },
   ]
 
   function handleExport(which) {
@@ -51,7 +59,7 @@ export function ReportsPage() {
     <div className="page">
       <PageHeader
         title="Reports & analytics"
-        subtitle="Executive-ready views spanning finance, production, and working capital."
+        subtitle="Executive-ready views spanning finance, production, working capital, and forecasts."
         actions={
           <>
             <select
@@ -94,6 +102,12 @@ export function ReportsPage() {
             onClick={() => setActiveTab('ops')}
           >
             Operational Efficiency
+          </button>
+          <button
+            className={`tab ${activeTab === 'forecast' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('forecast')}
+          >
+            Forecasting
           </button>
         </div>
       </section>
@@ -218,10 +232,10 @@ export function ReportsPage() {
       {activeTab === 'profitability' && (
         <section className="grid grid-1">
           <div className="card">
-            <div className="card-header">
-              <h3>Detailed Profitability Analysis</h3>
-              <span className="card-subtitle">By Product Family</span>
-            </div>
+              <div className="card-header">
+                <h3>Detailed Profitability Analysis</h3>
+                <span className="card-subtitle">By Product Family</span>
+              </div>
             <DataTable
               columns={[
                 { key: 'family', header: 'Product Family' },
@@ -245,7 +259,7 @@ export function ReportsPage() {
           <div className="card">
             <div className="card-header">
               <h3>Sales Trends vs Target</h3>
-              <span className="card-subtitle">Monthly Performance</span>
+              <span className="card-subtitle">Monthly Performance with simple forecast</span>
             </div>
             <DataTable
               columns={[
@@ -304,7 +318,85 @@ export function ReportsPage() {
           </div>
         </section>
       )}
+
+      {activeTab === 'forecast' && (
+        <section className="grid grid-2">
+          <div className="card">
+            <div className="card-header">
+              <h3>Demand forecast simulation</h3>
+              <span className="card-subtitle">Using simple average of recent periods</span>
+            </div>
+            <div className="card-header card-header-spaced">
+              <select
+                className="input input-select"
+                value={forecastHorizon}
+                onChange={(e) => setForecastHorizon(e.target.value)}
+              >
+                <option value="next_month">Next month</option>
+                <option value="next_quarter">Next quarter</option>
+              </select>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Forecasted revenue ({forecastHorizon === 'next_month' ? '1M' : '3M'})</span>
+                <span>${revenueForecast.next.toLocaleString()}</span>
+              </li>
+              <li>
+                <span>Trend direction</span>
+                <span>
+                  {revenueForecast.trend === 'up'
+                    ? 'Upward vs prior period'
+                    : revenueForecast.trend === 'down'
+                      ? 'Downward vs prior period'
+                      : 'Flat vs prior period'}
+                </span>
+              </li>
+              <li>
+                <span>Forecast vs current run-rate</span>
+                <span>
+                  {metrics.revenue
+                    ? `${((revenueForecast.next / metrics.revenue - 1) * 100).toFixed(1)}%`
+                    : 'N/A'}
+                </span>
+              </li>
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Profitability breakdown (simulated)</h3>
+              <span className="card-subtitle">Per product family</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'family', header: 'Product Family' },
+                { key: 'forecastRevenue', header: 'Forecast Revenue ($)', render: (v) => v.toLocaleString() },
+                { key: 'forecastGrossProfit', header: 'Forecast Gross Profit ($)', render: (v) => v.toLocaleString() },
+                { key: 'margin', header: 'Margin (%)' },
+              ]}
+              data={[
+                {
+                  family: 'Chili Sauces',
+                  forecastRevenue: Math.round(revenueForecast.next * 0.4),
+                  forecastGrossProfit: Math.round(revenueForecast.next * 0.4 * 0.42),
+                  margin: '42%',
+                },
+                {
+                  family: 'Marinades',
+                  forecastRevenue: Math.round(revenueForecast.next * 0.35),
+                  forecastGrossProfit: Math.round(revenueForecast.next * 0.35 * 0.39),
+                  margin: '39%',
+                },
+                {
+                  family: 'Cooking Sauces',
+                  forecastRevenue: Math.round(revenueForecast.next * 0.25),
+                  forecastGrossProfit: Math.round(revenueForecast.next * 0.25 * 0.29),
+                  margin: '29%',
+                },
+              ]}
+            />
+          </div>
+        </section>
+      )}
     </div>
   )
 }
-

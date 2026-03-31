@@ -8,6 +8,7 @@ import { StatCard } from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
+import { canEditModule } from '../utils/permissions'
 
 export function ProcurementPage() {
   const {
@@ -32,6 +33,8 @@ export function ProcurementPage() {
     quantity: '',
     requiredDate: '',
   })
+
+  const canEdit = canEditModule(currentUser?.role, 'procurement')
 
   const stats = useMemo(() => {
     const pending = purchaseRequisitions.filter((r) => r.status === 'Pending Approval').length
@@ -130,13 +133,15 @@ export function ProcurementPage() {
         title="Procurement control tower"
         subtitle="Manage suppliers, requisitions, and purchase orders with clear approval flows."
         actions={
-          <button
-            type="button"
-            className="button primary"
-            onClick={() => setRequisitionModalOpen(true)}
-          >
-            New purchase requisition
-          </button>
+          canEdit ? (
+            <button
+              type="button"
+              className="button primary"
+              onClick={() => setRequisitionModalOpen(true)}
+            >
+              New purchase requisition
+            </button>
+          ) : null
         }
       />
 
@@ -264,7 +269,7 @@ export function ProcurementPage() {
                   header: '',
                   render: (_, row) => (
                     <div className="table-actions">
-                      {row.status === 'Pending Approval' && (
+                      {canEdit && row.status === 'Pending Approval' && (
                         <>
                           <button
                             type="button"
@@ -282,7 +287,7 @@ export function ProcurementPage() {
                           </button>
                         </>
                       )}
-                      {row.status === 'Approved' && (
+                      {canEdit && row.status === 'Approved' && (
                         <button
                           type="button"
                           className="link-button"
@@ -420,13 +425,14 @@ export function ProcurementPage() {
         </section>
       )}
 
-      <Modal
-        open={requisitionModalOpen}
-        onClose={() => setRequisitionModalOpen(false)}
-        title="Create purchase requisition"
-        size="md"
-      >
-        <form className="form-grid" onSubmit={handleCreateRequisition}>
+      {canEdit && (
+        <Modal
+          open={requisitionModalOpen}
+          onClose={() => setRequisitionModalOpen(false)}
+          title="Create purchase requisition"
+          size="md"
+        >
+          <form className="form-grid" onSubmit={handleCreateRequisition}>
           <label className="field">
             <span className="field-label">Supplier</span>
             <select
@@ -484,21 +490,21 @@ export function ProcurementPage() {
               }
             />
           </label>
-          <div className="form-actions">
-            <button
-              type="button"
-              className="button ghost"
-              onClick={() => setRequisitionModalOpen(false)}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="button primary">
-              Submit for approval
-            </button>
-          </div>
-        </form>
-      </Modal>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setRequisitionModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="button primary">
+                Submit for approval
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }
-

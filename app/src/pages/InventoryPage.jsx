@@ -8,6 +8,7 @@ import { StatCard } from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
+import { canEditModule } from '../utils/permissions'
 
 export function InventoryPage() {
   const { inventory, auditLogs, adjustInventory } = useErp()
@@ -21,12 +22,15 @@ export function InventoryPage() {
   const [selectedItemId, setSelectedItemId] = useState('')
   const [adjustForm, setAdjustForm] = useState({ delta: '', reason: '' })
 
+  const canEdit = canEditModule(currentUser?.role, 'inventory')
+
   const stats = useMemo(() => {
     const totalSkus = inventory.length
     const raw = inventory.filter((i) => i.type === 'Raw').length
     const finished = inventory.filter((i) => i.type === 'Finished').length
     const lowStock = inventory.filter((i) => i.onHand <= i.reorderLevel).length
-    return { totalSkus, raw, finished, lowStock }
+    const totalValue = inventory.reduce((sum, i) => sum + i.onHand * (i.estimatedCost || 1), 0)
+    return { totalSkus, raw, finished, lowStock, totalValue }
   }, [inventory])
 
   const warehouses = useMemo(() => {
@@ -60,6 +64,42 @@ export function InventoryPage() {
     [inventory],
   )
 
+  const agingBuckets = useMemo(() => {
+    const now = new Date()
+    const bucket = { '0-30': 0, '30-60': 0, '60+': 0 }
+    inventory.forEach((item) => {
+      if (!item.batch || !item.expiryDate) return
+      const exp = new Date(item.expiryDate)
+      const diffDays = Math.round((exp - now) / (1000 * 60 * 60 * 24))
+      if (diffDays <= 30) bucket['0-30'] += item.onHand
+      else if (diffDays <= 60) bucket['30-60'] += item.onHand
+      else bucket['60+'] += item.onHand
+    })
+    return bucket
+  }, [inventory])
+
+  const movementSpeed = useMemo(() => {
+    const map = {}
+    auditLogs
+      .filter((a) => a.module === 'Inventory' && a.action === 'Stock Adjustment')
+      .forEach((a) => {
+        const match = a.details.match(/to (i\d+)./)
+        const itemId = match ? match[1] : null
+        if (!itemId) return
+        map[itemId] = (map[itemId] || 0) + 1
+      })
+    const itemsWithSpeed = inventory.map((i) => ({
+      ...i,
+      moves: map[i.id] || 0,
+    }))
+    const fastMoving = itemsWithSpeed.filter((i) => i.moves >= 2)
+    const deadStock = itemsWithSpeed.filter((i) => i.moves === 0 && i.onHand > 0)
+    const slowMoving = itemsWithSpeed.filter(
+      (i) => i.moves === 1 && i.onHand > 0 && !fastMoving.includes(i),
+    )
+    return { fastMoving, slowMoving, deadStock }
+  }, [auditLogs, inventory])
+
   const movements = useMemo(
     () =>
       auditLogs
@@ -73,6 +113,7 @@ export function InventoryPage() {
   }
 
   function openAdjustModal(itemId) {
+    if (!canEdit) return
     setSelectedItemId(itemId)
     setAdjustForm({ delta: '', reason: '' })
     setAdjustModalOpen(true)
@@ -121,6 +162,33 @@ export function InventoryPage() {
         />
       </section>
 
+      <section className="grid grid-4">
+        <StatCard
+          label="Inventory value (index)"
+          value={stats.totalValue.toLocaleString()}
+          trend="Based on relative costing per SKU"
+          tone="neutral"
+        />
+        <StatCard
+          label="Fast moving SKUs"
+          value={movementSpeed.fastMoving.length}
+          trend="Frequent movement in recent period"
+          tone="accent"
+        />
+        <StatCard
+          label="Slow moving SKUs"
+          value={movementSpeed.slowMoving.length}
+          trend="Occasional movement, monitor usage"
+          tone="warning"
+        />
+        <StatCard
+          label="Dead stock SKUs"
+          value={movementSpeed.deadStock.length}
+          trend="No recent movement, consider action"
+          tone="danger"
+        />
+      </section>
+
       <section className="tabs-container">
         <div className="tabs">
           <button
@@ -146,6 +214,12 @@ export function InventoryPage() {
             onClick={() => setActiveTab('movements')}
           >
             Movement History
+          </button>
+          <button
+            className={`tab ${activeTab === 'analytics' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('analytics')}
+          >
+            Inventory Analytics
           </button>
         </div>
       </section>
@@ -191,15 +265,16 @@ export function InventoryPage() {
                 {
                   key: 'id',
                   header: '',
-                  render: (value) => (
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => openAdjustModal(value)}
-                    >
-                      Adjust
-                    </button>
-                  ),
+                  render: (value) =>
+                    canEdit ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => openAdjustModal(value)}
+                      >
+                        Adjust
+                      </button>
+                    ) : null,
                 },
               ]}
               data={filteredInventory}
@@ -319,13 +394,59 @@ export function InventoryPage() {
         </section>
       )}
 
-      <Modal
-        open={adjustModalOpen}
-        onClose={() => setAdjustModalOpen(false)}
-        title="Adjust stock level"
-        size="sm"
-      >
-        <form className="form-grid" onSubmit={handleAdjustSubmit}>
+      {activeTab === 'analytics' && (
+        <section className="grid grid-2">
+          <div className="card">
+            <div className="card-header">
+              <h3>Stock aging analysis</h3>
+              <span className="card-subtitle">By remaining shelf life</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>0–30 days</span>
+                <span>{agingBuckets['0-30'].toLocaleString()} units at risk</span>
+              </li>
+              <li>
+                <span>30–60 days</span>
+                <span>{agingBuckets['30-60'].toLocaleString()} units</span>
+              </li>
+              <li>
+                <span>60+ days</span>
+                <span>{agingBuckets['60+'].toLocaleString()} units</span>
+              </li>
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Inventory insights</h3>
+              <span className="card-subtitle">Fast, slow, and dead stock</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Fast moving items</span>
+                <span>{movementSpeed.fastMoving.map((i) => i.sku).join(', ') || 'None'}</span>
+              </li>
+              <li>
+                <span>Slow moving items</span>
+                <span>{movementSpeed.slowMoving.map((i) => i.sku).join(', ') || 'None'}</span>
+              </li>
+              <li>
+                <span>Dead stock</span>
+                <span>{movementSpeed.deadStock.map((i) => i.sku).join(', ') || 'None'}</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {canEdit && (
+        <Modal
+          open={adjustModalOpen}
+          onClose={() => setAdjustModalOpen(false)}
+          title="Adjust stock level"
+          size="sm"
+        >
+          <form className="form-grid" onSubmit={handleAdjustSubmit}>
           <label className="field">
             <span className="field-label">Adjustment quantity</span>
             <input
@@ -347,21 +468,21 @@ export function InventoryPage() {
               required
             />
           </label>
-          <div className="form-actions">
-            <button
-              type="button"
-              className="button ghost"
-              onClick={() => setAdjustModalOpen(false)}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="button primary">
-              Apply adjustment
-            </button>
-          </div>
-        </form>
-      </Modal>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setAdjustModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="button primary">
+                Apply adjustment
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }
-

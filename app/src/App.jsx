@@ -15,6 +15,7 @@ import { SalesPage } from './pages/SalesPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { UsersPage } from './pages/UsersPage'
 import { AuditTrailPage } from './pages/AuditTrailPage'
+import { AccessDeniedPage } from './pages/AccessDeniedPage'
 import { SettingsPage } from './pages/SettingsPage'
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/audit" element={<AuditTrailPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/access-denied" element={<AccessDeniedPage />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

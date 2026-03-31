@@ -7,6 +7,7 @@ import { StatCard } from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
+import { canEditModule } from '../utils/permissions'
 
 export function SalesPage() {
   const { salesOrders, inventory, createSalesOrder, updateSalesStatus } = useErp()
@@ -24,6 +25,8 @@ export function SalesPage() {
     productId: '',
     quantity: '',
   })
+
+  const canEdit = canEditModule(currentUser?.role, 'sales')
 
   const stats = useMemo(() => {
     const open = salesOrders.filter((o) => o.status !== 'Dispatched').length
@@ -110,13 +113,15 @@ export function SalesPage() {
         title="Sales & distribution"
         subtitle="Stay close to demand, export channels, and dispatch performance."
         actions={
-          <button
-            type="button"
-            className="button primary"
-            onClick={() => setCreateModalOpen(true)}
-          >
-            Create sales order
-          </button>
+          canEdit ? (
+            <button
+              type="button"
+              className="button primary"
+              onClick={() => setCreateModalOpen(true)}
+            >
+              Create sales order
+            </button>
+          ) : null
         }
       />
 
@@ -216,7 +221,7 @@ export function SalesPage() {
                       <button type="button" className="link-button" onClick={() => openDetail(row)}>
                         View
                       </button>
-                      {row.status !== 'Dispatched' && (
+                      {canEdit && row.status !== 'Dispatched' && (
                         <button
                           type="button"
                           className="link-button"
@@ -373,12 +378,13 @@ export function SalesPage() {
         ) : null}
       </Modal>
 
-      <Modal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        title="Create sales order"
-      >
-        <form className="form-grid" onSubmit={handleCreateOrder}>
+      {canEdit && (
+        <Modal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          title="Create sales order"
+        >
+          <form className="form-grid" onSubmit={handleCreateOrder}>
           <label className="field">
             <span className="field-label">Customer</span>
             <input
@@ -453,17 +459,21 @@ export function SalesPage() {
               required
             />
           </label>
-          <div className="form-actions">
-            <button type="button" className="button ghost" onClick={() => setCreateModalOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" className="button primary">
-              Save order
-            </button>
-          </div>
-        </form>
-      </Modal>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setCreateModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="button primary">
+                Save order
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }
-

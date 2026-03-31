@@ -7,6 +7,154 @@ import { StatCard } from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
+import { canEditModule } from '../utils/permissions'
+
+const invoiceLinesById = {
+  inv1: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 1200,
+      uom: 'bottles',
+      unitPrice: 28,
+      lineTotal: 33600,
+    },
+    {
+      sku: 'FG-SAUCE-HERB',
+      description: 'Herb Marinade 1L',
+      quantity: 300,
+      uom: 'bottles',
+      unitPrice: 28,
+      lineTotal: 8400,
+    },
+  ],
+  inv2: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 800,
+      uom: 'bottles',
+      unitPrice: 20,
+      lineTotal: 16000,
+    },
+    {
+      sku: 'FG-SAUCE-MARINADE',
+      description: 'Signature Marinade 2kg pouch',
+      quantity: 150,
+      uom: 'packs',
+      unitPrice: 100,
+      lineTotal: 15000,
+    },
+  ],
+  inv3: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 600,
+      uom: 'bottles',
+      unitPrice: 30,
+      lineTotal: 18000,
+    },
+    {
+      sku: 'FG-SAUCE-HERB',
+      description: 'Herb Marinade 1L',
+      quantity: 300,
+      uom: 'bottles',
+      unitPrice: 30,
+      lineTotal: 9000,
+    },
+  ],
+  inv4: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 18000,
+      uom: 'bottles',
+      unitPrice: 25000,
+      lineTotal: 450000000,
+    },
+    {
+      sku: 'FG-SAUCE-HERB',
+      description: 'Herb Marinade 1L',
+      quantity: 9200,
+      uom: 'bottles',
+      unitPrice: 25000,
+      lineTotal: 230000000,
+    },
+  ],
+  inv5: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 900,
+      uom: 'bottles',
+      unitPrice: 24,
+      lineTotal: 21600,
+    },
+    {
+      sku: 'FG-SAUCE-MARINADE',
+      description: 'Signature Marinade 2kg pouch',
+      quantity: 300,
+      uom: 'packs',
+      unitPrice: 48,
+      lineTotal: 14400,
+    },
+  ],
+  inv6: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 500,
+      uom: 'bottles',
+      unitPrice: 26,
+      lineTotal: 13000,
+    },
+    {
+      sku: 'FG-SAUCE-HERB',
+      description: 'Herb Marinade 1L',
+      quantity: 250,
+      uom: 'bottles',
+      unitPrice: 26,
+      lineTotal: 6500,
+    },
+  ],
+  inv7: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 1400,
+      uom: 'bottles',
+      unitPrice: 25,
+      lineTotal: 35000,
+    },
+    {
+      sku: 'FG-SAUCE-MARINADE',
+      description: 'Signature Marinade 2kg pouch',
+      quantity: 800,
+      uom: 'packs',
+      unitPrice: 22.5,
+      lineTotal: 18000,
+    },
+  ],
+  inv8: [
+    {
+      sku: 'FG-SAUCE-CHILI',
+      description: 'Premium Chili Sauce 500ml',
+      quantity: 900,
+      uom: 'bottles',
+      unitPrice: 32,
+      lineTotal: 28800,
+    },
+    {
+      sku: 'FG-SAUCE-HERB',
+      description: 'Herb Marinade 1L',
+      quantity: 600,
+      uom: 'bottles',
+      unitPrice: 32,
+      lineTotal: 19200,
+    },
+  ],
+}
 
 export function FinancePage() {
   const { invoices, payments, purchaseOrders, addInvoice, addPayment } = useErp()
@@ -16,6 +164,8 @@ export function FinancePage() {
   const [activeTab, setActiveTab] = useState('ar_ap')
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false)
+  const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [invoiceForm, setInvoiceForm] = useState({
     customer: '',
     orderId: '',
@@ -29,6 +179,8 @@ export function FinancePage() {
     method: 'Bank Transfer',
     currency: 'SGD',
   })
+
+  const canEdit = canEditModule(currentUser?.role, 'finance')
 
   const summary = useMemo(() => {
     const totalRevenue = invoices.reduce((sum, inv) => sum + inv.amount, 0)
@@ -54,6 +206,27 @@ export function FinancePage() {
       paid,
     }
   }, [invoices, purchaseOrders])
+
+  const selectedInvoiceLines = selectedInvoice
+    ? invoiceLinesById[selectedInvoice.id] ?? []
+    : []
+
+  const selectedInvoicePayments = useMemo(
+    () =>
+      selectedInvoice ? payments.filter((p) => p.invoiceId === selectedInvoice.id) : [],
+    [payments, selectedInvoice],
+  )
+
+  const selectedInvoicePaymentSummary = useMemo(() => {
+    if (!selectedInvoice) {
+      return { totalPaid: 0, balance: 0 }
+    }
+    const totalPaid = selectedInvoicePayments
+      .filter((p) => p.status === 'Posted')
+      .reduce((sum, p) => sum + p.amount, 0)
+    const balance = selectedInvoice.amount - totalPaid
+    return { totalPaid, balance }
+  }, [selectedInvoice, selectedInvoicePayments])
 
   const glData = [
     { account: '1001', name: 'Main Operating Bank', balance: 145000, type: 'Asset' },
@@ -131,22 +304,24 @@ export function FinancePage() {
         title="Finance workspace"
         subtitle="Monitor revenue, receivables, and payables with live links to sales and procurement."
         actions={
-          <>
-            <button
-              type="button"
-              className="button ghost"
-              onClick={() => setInvoiceModalOpen(true)}
-            >
-              Add invoice
-            </button>
-            <button
-              type="button"
-              className="button primary"
-              onClick={() => setPaymentModalOpen(true)}
-            >
-              Record payment
-            </button>
-          </>
+          canEdit ? (
+            <>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setInvoiceModalOpen(true)}
+              >
+                Add invoice
+              </button>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => setPaymentModalOpen(true)}
+              >
+                Record payment
+              </button>
+            </>
+          ) : null
         }
       />
 
@@ -241,6 +416,22 @@ export function FinancePage() {
                     >
                       {value}
                     </Badge>
+                  ),
+                },
+                {
+                  key: 'id',
+                  header: '',
+                  render: (_, row) => (
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => {
+                        setSelectedInvoice(row)
+                        setInvoiceDetailOpen(true)
+                      }}
+                    >
+                      View
+                    </button>
                   ),
                 },
               ]}
@@ -352,6 +543,180 @@ export function FinancePage() {
       )}
 
       <Modal
+        open={Boolean(selectedInvoice) && invoiceDetailOpen}
+        onClose={() => {
+          setInvoiceDetailOpen(false)
+          setSelectedInvoice(null)
+        }}
+        title={selectedInvoice ? `Invoice ${selectedInvoice.invoiceNumber}` : 'Invoice details'}
+        size="lg"
+      >
+        {selectedInvoice && (
+          <div className="form-grid">
+            <div className="card-header card-header-spaced">
+              <div>
+                <h3>{selectedInvoice.customer}</h3>
+                <span className="card-subtitle">
+                  {selectedInvoice.currency} {selectedInvoice.amount.toLocaleString()} •{' '}
+                  {selectedInvoice.status}
+                </span>
+              </div>
+              <Badge
+                tone={
+                  selectedInvoice.status === 'Paid'
+                    ? 'success'
+                    : selectedInvoice.status === 'Partially Paid'
+                      ? 'warning'
+                      : 'danger'
+                }
+              >
+                {selectedInvoice.status}
+              </Badge>
+            </div>
+
+            <section className="grid grid-3">
+              <div>
+                <h4>Invoice details</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Invoice number</span>
+                    <span>{selectedInvoice.invoiceNumber}</span>
+                  </li>
+                  <li>
+                    <span>Linked sales order</span>
+                    <span>{selectedInvoice.orderId ?? 'Not linked'}</span>
+                  </li>
+                  <li>
+                    <span>Issue date</span>
+                    <span>{selectedInvoice.issueDate}</span>
+                  </li>
+                  <li>
+                    <span>Due date</span>
+                    <span>{selectedInvoice.dueDate}</span>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h4>Payment summary</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Total invoiced</span>
+                    <span>
+                      {selectedInvoice.currency}{' '}
+                      {selectedInvoice.amount.toLocaleString()}
+                    </span>
+                  </li>
+                  <li>
+                    <span>Total paid</span>
+                    <span>
+                      {selectedInvoice.currency}{' '}
+                      {selectedInvoicePaymentSummary.totalPaid.toLocaleString()}
+                    </span>
+                  </li>
+                  <li>
+                    <span>Outstanding</span>
+                    <span>
+                      {selectedInvoice.currency}{' '}
+                      {selectedInvoicePaymentSummary.balance.toLocaleString()}
+                    </span>
+                  </li>
+                  <li>
+                    <span>Payment count</span>
+                    <span>{selectedInvoicePayments.length}</span>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h4>Customer</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Name</span>
+                    <span>{selectedInvoice.customer}</span>
+                  </li>
+                  <li>
+                    <span>Entity</span>
+                    <span>Food service / retail partner</span>
+                  </li>
+                  <li>
+                    <span>Region</span>
+                    <span>APAC</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Line items</h3>
+                  <span className="card-subtitle">Products and quantities invoiced</span>
+                </div>
+                <DataTable
+                  columns={[
+                    { key: 'sku', header: 'SKU' },
+                    { key: 'description', header: 'Description' },
+                    {
+                      key: 'quantity',
+                      header: 'Qty',
+                      render: (v, row) => `${v.toLocaleString()} ${row.uom}`,
+                    },
+                    {
+                      key: 'unitPrice',
+                      header: 'Unit price',
+                      render: (v) =>
+                        `${selectedInvoice.currency} ${v.toLocaleString()}`,
+                    },
+                    {
+                      key: 'lineTotal',
+                      header: 'Line total',
+                      render: (v) =>
+                        `${selectedInvoice.currency} ${v.toLocaleString()}`,
+                    },
+                  ]}
+                  data={selectedInvoiceLines}
+                />
+              </div>
+            </section>
+
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Payment history</h3>
+                  <span className="card-subtitle">
+                    All payments posted or in progress against this invoice
+                  </span>
+                </div>
+                <DataTable
+                  columns={[
+                    { key: 'paymentNumber', header: 'Payment' },
+                    { key: 'date', header: 'Date' },
+                    { key: 'method', header: 'Method' },
+                    {
+                      key: 'amount',
+                      header: 'Amount',
+                      render: (value, row) =>
+                        `${row.currency} ${value.toLocaleString()}`,
+                    },
+                    {
+                      key: 'status',
+                      header: 'Status',
+                      render: (value) => (
+                        <Badge tone={value === 'Posted' ? 'success' : 'neutral'}>
+                          {value}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                  data={selectedInvoicePayments}
+                />
+              </div>
+            </section>
+          </div>
+        )}
+      </Modal>
+
+      {canEdit && (
+        <Modal
         open={invoiceModalOpen}
         onClose={() => setInvoiceModalOpen(false)}
         title="Add invoice"
@@ -421,15 +786,17 @@ export function FinancePage() {
             </button>
           </div>
         </form>
-      </Modal>
+        </Modal>
+      )}
 
-      <Modal
-        open={paymentModalOpen}
-        onClose={() => setPaymentModalOpen(false)}
-        title="Record payment"
-        size="md"
-      >
-        <form className="form-grid" onSubmit={handlePaymentSubmit}>
+      {canEdit && (
+        <Modal
+          open={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          title="Record payment"
+          size="md"
+        >
+          <form className="form-grid" onSubmit={handlePaymentSubmit}>
           <label className="field">
             <span className="field-label">Invoice</span>
             <select
@@ -485,17 +852,21 @@ export function FinancePage() {
               <option value="Credit Card">Credit card</option>
             </select>
           </label>
-          <div className="form-actions">
-            <button type="button" className="button ghost" onClick={() => setPaymentModalOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" className="button primary">
-              Save payment
-            </button>
-          </div>
-        </form>
-      </Modal>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setPaymentModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="button primary">
+                Save payment
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }
-
