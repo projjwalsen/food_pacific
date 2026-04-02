@@ -1,4 +1,17 @@
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 export function RevenueTrendChart({ data }) {
   return (
@@ -51,6 +64,32 @@ export function ProductSplitChart({ data }) {
             <Legend />
             <Bar dataKey="value" fill="#6366f1" radius={[6, 6, 0, 0]} />
           </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+export function DonutChartCard({ title, subtitle, data }) {
+  return (
+    <div className="chart-card">
+      <div className="chart-header">
+        <h3>{title}</h3>
+        {subtitle ? <span className="chart-subtitle">{subtitle}</span> : null}
+      </div>
+      <div className="chart-body">
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Tooltip />
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="label"
+              innerRadius={60}
+              outerRadius={90}
+              paddingAngle={3}
+            />
+          </PieChart>
         </ResponsiveContainer>
       </div>
     </div>

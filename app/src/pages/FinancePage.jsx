@@ -3,11 +3,15 @@ import { Badge } from '../components/Badge'
 import { DataTable } from '../components/DataTable'
 import { Modal } from '../components/Modal'
 import { PageHeader } from '../components/PageHeader'
+import { ReportCard } from '../components/ReportCard'
+import { ReportFilterBar } from '../components/ReportFilterBar'
+import { StatementTable } from '../components/StatementTable'
 import { StatCard } from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
 import { canEditModule } from '../utils/permissions'
+import { generateFinancialStatements, generateTrialBalance } from '../utils/metrics'
 
 const invoiceLinesById = {
   inv1: [
@@ -161,11 +165,14 @@ export function FinancePage() {
   const { currentUser } = useAuth()
   const { showToast } = useToast()
 
-  const [activeTab, setActiveTab] = useState('ar_ap')
+  const [activeTab, setActiveTab] = useState('overview')
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false)
   const [selectedInvoice, setSelectedInvoice] = useState(null)
+  const [statementView, setStatementView] = useState('pl')
+  const [period, setPeriod] = useState('mtd')
+  const [year, setYear] = useState('2026')
   const [invoiceForm, setInvoiceForm] = useState({
     customer: '',
     orderId: '',
@@ -207,6 +214,91 @@ export function FinancePage() {
     }
   }, [invoices, purchaseOrders])
 
+  const statements = useMemo(
+    () =>
+      generateFinancialStatements({
+        invoices,
+        payments,
+        purchaseOrders,
+      }),
+    [invoices, payments, purchaseOrders],
+  )
+
+  const trialBalance = generateTrialBalance([
+    {
+      code: '1000',
+      name: 'Cash and Cash Equivalents',
+      debit: statements.balanceSheet.assets.current.cash,
+      credit: 0,
+    },
+    {
+      code: '1100',
+      name: 'Accounts Receivable',
+      debit: statements.balanceSheet.assets.current.receivables,
+      credit: 0,
+    },
+    {
+      code: '1200',
+      name: 'Inventory',
+      debit: statements.balanceSheet.assets.current.inventory,
+      credit: 0,
+    },
+    {
+      code: '1300',
+      name: 'Property, Plant and Equipment',
+      debit: statements.balanceSheet.assets.nonCurrent.fixedAssets,
+      credit: 0,
+    },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      debit: 0,
+      credit: statements.balanceSheet.liabilities.current.payables,
+    },
+    {
+      code: '2100',
+      name: 'Accruals',
+      debit: 0,
+      credit: statements.balanceSheet.liabilities.current.accruals,
+    },
+    {
+      code: '2200',
+      name: 'Term Loans',
+      debit: 0,
+      credit: statements.balanceSheet.liabilities.nonCurrent.loans,
+    },
+    {
+      code: '3000',
+      name: 'Share Capital',
+      debit: 0,
+      credit: statements.balanceSheet.equity.shareCapital,
+    },
+    {
+      code: '3100',
+      name: 'Retained Earnings',
+      debit: 0,
+      credit: statements.balanceSheet.equity.retainedEarnings,
+    },
+    {
+      code: '4000',
+      name: 'Revenue',
+      debit: 0,
+      credit: statements.pl.revenue,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Goods Sold',
+      debit: statements.pl.cogs,
+      credit: 0,
+    },
+    {
+      code: '6000',
+      name: 'Operating Expenses',
+      debit: statements.pl.operatingExpenses,
+      credit: 0,
+    },
+  ])
+
   const selectedInvoiceLines = selectedInvoice
     ? invoiceLinesById[selectedInvoice.id] ?? []
     : []
@@ -227,28 +319,6 @@ export function FinancePage() {
     const balance = selectedInvoice.amount - totalPaid
     return { totalPaid, balance }
   }, [selectedInvoice, selectedInvoicePayments])
-
-  const glData = [
-    { account: '1001', name: 'Main Operating Bank', balance: 145000, type: 'Asset' },
-    { account: '1100', name: 'Accounts Receivable', balance: summary.receivables, type: 'Asset' },
-    { account: '1200', name: 'Inventory Asset', balance: 84000, type: 'Asset' },
-    { account: '2100', name: 'Accounts Payable', balance: summary.payables, type: 'Liability' },
-    { account: '3100', name: 'Retained Earnings', balance: summary.actual, type: 'Equity' },
-    { account: '4100', name: 'Sales Revenue', balance: summary.totalRevenue, type: 'Income' },
-  ]
-
-  const fixedAssets = [
-    { id: 'FA-001', name: 'Sauce Line 1', value: 450000, depreciation: 45000, net: 405000 },
-    { id: 'FA-002', name: 'Sauce Line 2', value: 380000, depreciation: 38000, net: 342000 },
-    { id: 'FA-003', name: 'Main FG Warehouse', value: 1200000, depreciation: 24000, net: 1176000 },
-  ]
-
-  const bankRec = [
-    { date: '2026-03-31', reference: 'Statement Ending Balance', amount: 148500, type: 'Statement' },
-    { date: '2026-04-01', reference: 'Outstanding Check #1042', amount: -2500, type: 'Adjustment' },
-    { date: '2026-04-01', reference: 'Deposit in Transit', amount: 1000, type: 'Adjustment' },
-    { date: '2026-04-01', reference: 'Adjusted Bank Balance', amount: 147000, type: 'Total' },
-  ]
 
   function handleInvoiceSubmit(e) {
     e.preventDefault()
@@ -325,120 +395,174 @@ export function FinancePage() {
         }
       />
 
-      <section className="grid grid-4">
-        <StatCard
-          label="Total revenue (all currencies)"
-          value={`$${summary.totalRevenue.toLocaleString()}`}
-          trend="Consolidated across all entities"
-          tone="primary"
-        />
-        <StatCard
-          label="Outstanding receivables"
-          value={`$${summary.receivables.toLocaleString()}`}
-          trend={`${invoices.filter((i) => i.status !== 'Paid').length} open invoices`}
-          tone="accent"
-        />
-        <StatCard
-          label="Committed payables"
-          value={`$${summary.payables.toLocaleString()}`}
-          trend={`${purchaseOrders.length} purchase orders`}
-          tone="warning"
-        />
-        <StatCard
-          label="Budget vs actual"
-          value={`$${summary.actual.toLocaleString()}`}
-          trend={`Budget ${summary.budget.toLocaleString()} | Actual ${
-            summary.actual >= summary.budget ? 'on track' : 'behind'
-          }`}
-          tone={summary.actual >= summary.budget ? 'success' : 'danger'}
-        />
-      </section>
-
       <section className="tabs-container">
         <div className="tabs">
           <button
-            className={`tab ${activeTab === 'ar_ap' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('ar_ap')}
+            className={`tab ${activeTab === 'overview' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('overview')}
           >
-            Receivables & Payables
+            Overview
           </button>
           <button
-            className={`tab ${activeTab === 'gl' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('gl')}
+            className={`tab ${activeTab === 'invoices' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('invoices')}
           >
-            General Ledger
+            Invoices
           </button>
           <button
-            className={`tab ${activeTab === 'bank' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('bank')}
+            className={`tab ${activeTab === 'payments' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('payments')}
           >
-            Bank Reconciliation
+            Payments
           </button>
           <button
-            className={`tab ${activeTab === 'assets' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('assets')}
+            className={`tab ${activeTab === 'statements' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('statements')}
           >
-            Fixed Assets
+            Financial Statements
+          </button>
+          <button
+            className={`tab ${activeTab === 'trial' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('trial')}
+          >
+            Trial Balance
+          </button>
+          <button
+            className={`tab ${activeTab === 'notes' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('notes')}
+          >
+            Notes & Disclosures
           </button>
         </div>
       </section>
 
-      {activeTab === 'ar_ap' && (
-        <section className="grid grid-2">
-          <div className="card">
-            <div className="card-header">
-              <h3>Invoices</h3>
-              <span className="card-subtitle">Receivables</span>
-            </div>
-            <DataTable
-              columns={[
-                { key: 'invoiceNumber', header: 'Invoice' },
-                { key: 'customer', header: 'Customer' },
-                {
-                  key: 'amount',
-                  header: 'Amount',
-                  render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
-                },
-                { key: 'issueDate', header: 'Issue date' },
-                { key: 'dueDate', header: 'Due date' },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  render: (value) => (
-                    <Badge
-                      tone={
-                        value === 'Paid'
-                          ? 'success'
-                          : value === 'Partially Paid'
-                            ? 'warning'
-                            : 'danger'
-                      }
-                    >
-                      {value}
-                    </Badge>
-                  ),
-                },
-                {
-                  key: 'id',
-                  header: '',
-                  render: (_, row) => (
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => {
-                        setSelectedInvoice(row)
-                        setInvoiceDetailOpen(true)
-                      }}
-                    >
-                      View
-                    </button>
-                  ),
-                },
-              ]}
-              data={invoices}
+      {activeTab === 'overview' && (
+        <>
+          <section className="grid grid-4">
+            <StatCard
+              label="Total revenue (all currencies)"
+              value={`$${summary.totalRevenue.toLocaleString()}`}
+              trend="Consolidated across all entities"
+              tone="primary"
             />
-          </div>
+            <StatCard
+              label="Outstanding receivables"
+              value={`$${summary.receivables.toLocaleString()}`}
+              trend={`${invoices.filter((i) => i.status !== 'Paid').length} open invoices`}
+              tone="accent"
+            />
+            <StatCard
+              label="Committed payables"
+              value={`$${summary.payables.toLocaleString()}`}
+              trend={`${purchaseOrders.length} purchase orders`}
+              tone="warning"
+            />
+            <StatCard
+              label="Budget vs actual"
+              value={`$${summary.actual.toLocaleString()}`}
+              trend={`Budget ${summary.budget.toLocaleString()} | Actual ${
+                summary.actual >= summary.budget ? 'on track' : 'behind'
+              }`}
+              tone={summary.actual >= summary.budget ? 'success' : 'danger'}
+            />
+          </section>
 
+          <section className="grid grid-3">
+            <ReportCard
+              label="Net profit after tax"
+              value={`$${statements.pl.profitAfterTax.toLocaleString()}`}
+              sublabel="For selected period"
+              tone={statements.pl.profitAfterTax >= 0 ? 'success' : 'danger'}
+            />
+            <ReportCard
+              label="Cash and cash equivalents"
+              value={`$${statements.balanceSheet.assets.current.cash.toLocaleString()}`}
+              sublabel="Balance sheet snapshot"
+              tone="neutral"
+            />
+            <ReportCard
+              label="Debt to equity ratio"
+              value={(
+                statements.balanceSheet.liabilities.nonCurrent.loans /
+                  statements.equity.closing || 0
+              ).toFixed(2)}
+              sublabel="Leverage indicator"
+              tone="accent"
+            />
+          </section>
+        </>
+      )}
+
+      {activeTab === 'invoices' && (
+        <>
+          <ReportFilterBar
+            period={period}
+            year={year}
+            onPeriodChange={setPeriod}
+            onYearChange={setYear}
+            onExport={() => showToast('Invoice report export simulated.', 'info')}
+            onPrint={() => showToast('Invoice report print simulated.', 'info')}
+          />
+          <section className="grid grid-1">
+            <div className="card">
+              <div className="card-header">
+                <h3>Invoices</h3>
+                <span className="card-subtitle">Receivables</span>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'invoiceNumber', header: 'Invoice' },
+                  { key: 'customer', header: 'Customer' },
+                  {
+                    key: 'amount',
+                    header: 'Amount',
+                    render: (value, row) => `${row.currency} ${value.toLocaleString()}`,
+                  },
+                  { key: 'issueDate', header: 'Issue date' },
+                  { key: 'dueDate', header: 'Due date' },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    render: (value) => (
+                      <Badge
+                        tone={
+                          value === 'Paid'
+                            ? 'success'
+                            : value === 'Partially Paid'
+                              ? 'warning'
+                              : 'danger'
+                        }
+                      >
+                        {value}
+                      </Badge>
+                    ),
+                  },
+                  {
+                    key: 'id',
+                    header: '',
+                    render: (_, row) => (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => {
+                          setSelectedInvoice(row)
+                          setInvoiceDetailOpen(true)
+                        }}
+                      >
+                        View
+                      </button>
+                    ),
+                  },
+                ]}
+                data={invoices}
+              />
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'payments' && (
+        <section className="grid grid-1">
           <div className="card">
             <div className="card-header">
               <h3>Payments</h3>
@@ -469,7 +593,343 @@ export function FinancePage() {
         </section>
       )}
 
-      {activeTab === 'gl' && (
+      {activeTab === 'statements' && (
+        <>
+          <ReportFilterBar
+            period={period}
+            year={year}
+            onPeriodChange={setPeriod}
+            onYearChange={setYear}
+            onExport={() => showToast('Financial statements export simulated.', 'info')}
+            onPrint={() => showToast('Financial statements print simulated.', 'info')}
+          />
+          <section className="tabs-container">
+            <div className="tabs">
+              <button
+                className={`tab ${statementView === 'pl' ? 'tab-active' : ''}`}
+                onClick={() => setStatementView('pl')}
+              >
+                Profit & Loss
+              </button>
+              <button
+                className={`tab ${statementView === 'bs' ? 'tab-active' : ''}`}
+                onClick={() => setStatementView('bs')}
+              >
+                Balance Sheet
+              </button>
+              <button
+                className={`tab ${statementView === 'cf' ? 'tab-active' : ''}`}
+                onClick={() => setStatementView('cf')}
+              >
+                Cash Flow
+              </button>
+              <button
+                className={`tab ${statementView === 'equity' ? 'tab-active' : ''}`}
+                onClick={() => setStatementView('equity')}
+              >
+                Changes in Equity
+              </button>
+            </div>
+          </section>
+
+          {statementView === 'pl' && (
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Profit & Loss Statement</h3>
+                  <span className="card-subtitle">For the selected period</span>
+                </div>
+                <StatementTable
+                  sections={[
+                    {
+                      title: 'Revenue',
+                      rows: [
+                        {
+                          label: 'Sales revenue',
+                          value: statements.pl.revenue.toLocaleString(),
+                        },
+                      ],
+                      total: {
+                        label: 'Total revenue',
+                        value: statements.pl.revenue.toLocaleString(),
+                      },
+                    },
+                    {
+                      title: 'Cost of goods sold',
+                      rows: [
+                        {
+                          label: 'Cost of goods sold',
+                          value: statements.pl.cogs.toLocaleString(),
+                        },
+                      ],
+                      total: {
+                        label: 'Total cost of sales',
+                        value: statements.pl.cogs.toLocaleString(),
+                      },
+                    },
+                    {
+                      title: 'Gross profit',
+                      rows: [],
+                      total: {
+                        label: 'Gross profit',
+                        value: statements.pl.grossProfit.toLocaleString(),
+                      },
+                    },
+                    {
+                      title: 'Operating expenses',
+                      rows: [
+                        {
+                          label: 'Operating expenses',
+                          value: statements.pl.operatingExpenses.toLocaleString(),
+                        },
+                      ],
+                      total: {
+                        label: 'Total operating expenses',
+                        value: statements.pl.operatingExpenses.toLocaleString(),
+                      },
+                    },
+                    {
+                      title: 'Other income / expenses',
+                      rows: [
+                        {
+                          label: 'Net other income',
+                          value: statements.pl.otherNet.toLocaleString(),
+                        },
+                      ],
+                      total: {
+                        label: 'Net other income',
+                        value: statements.pl.otherNet.toLocaleString(),
+                      },
+                    },
+                    {
+                      title: 'Net profit',
+                      rows: [
+                        {
+                          label: 'Net profit before tax',
+                          value: statements.pl.profitBeforeTax.toLocaleString(),
+                        },
+                        {
+                          label: 'Income tax expense',
+                          value: `(${statements.pl.tax.toLocaleString()})`,
+                        },
+                      ],
+                      total: {
+                        label: 'Net profit after tax',
+                        value: statements.pl.profitAfterTax.toLocaleString(),
+                      },
+                    },
+                  ]}
+                />
+              </div>
+            </section>
+          )}
+
+          {statementView === 'bs' && (
+            <section className="grid grid-2">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Assets</h3>
+                  <span className="card-subtitle">Current and non-current</span>
+                </div>
+                <StatementTable
+                  sections={[
+                    {
+                      title: 'Current assets',
+                      rows: [
+                        {
+                          label: 'Cash and cash equivalents',
+                          value:
+                            statements.balanceSheet.assets.current.cash.toLocaleString(),
+                        },
+                        {
+                          label: 'Trade receivables',
+                          value:
+                            statements.balanceSheet.assets.current.receivables.toLocaleString(),
+                        },
+                        {
+                          label: 'Inventories',
+                          value:
+                            statements.balanceSheet.assets.current.inventory.toLocaleString(),
+                        },
+                      ],
+                    },
+                    {
+                      title: 'Non-current assets',
+                      rows: [
+                        {
+                          label: 'Property, plant and equipment',
+                          value:
+                            statements.balanceSheet.assets.nonCurrent.fixedAssets.toLocaleString(),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+              </div>
+              <div className="card">
+                <div className="card-header">
+                  <h3>Liabilities and equity</h3>
+                  <span className="card-subtitle">Current, non-current, and equity</span>
+                </div>
+                <StatementTable
+                  sections={[
+                    {
+                      title: 'Current liabilities',
+                      rows: [
+                        {
+                          label: 'Trade payables',
+                          value:
+                            statements.balanceSheet.liabilities.current.payables.toLocaleString(),
+                        },
+                        {
+                          label: 'Accruals',
+                          value:
+                            statements.balanceSheet.liabilities.current.accruals.toLocaleString(),
+                        },
+                      ],
+                    },
+                    {
+                      title: 'Non-current liabilities',
+                      rows: [
+                        {
+                          label: 'Term loans',
+                          value:
+                            statements.balanceSheet.liabilities.nonCurrent.loans.toLocaleString(),
+                        },
+                      ],
+                    },
+                    {
+                      title: 'Equity',
+                      rows: [
+                        {
+                          label: 'Share capital',
+                          value:
+                            statements.balanceSheet.equity.shareCapital.toLocaleString(),
+                        },
+                        {
+                          label: 'Retained earnings',
+                          value:
+                            statements.balanceSheet.equity.retainedEarnings.toLocaleString(),
+                        },
+                        {
+                          label: 'Current year profit',
+                          value:
+                            statements.balanceSheet.equity.currentYearProfit.toLocaleString(),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+              </div>
+            </section>
+          )}
+
+          {statementView === 'cf' && (
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Cash Flow Statement</h3>
+                  <span className="card-subtitle">Indirect method, summary view</span>
+                </div>
+                <StatementTable
+                  sections={[
+                    {
+                      title: 'Operating activities',
+                      rows: [
+                        {
+                          label: 'Net cash from operating activities',
+                          value: statements.cashFlow.operating.toLocaleString(),
+                        },
+                      ],
+                    },
+                    {
+                      title: 'Investing activities',
+                      rows: [
+                        {
+                          label: 'Net cash from investing activities',
+                          value: statements.cashFlow.investing.toLocaleString(),
+                        },
+                      ],
+                    },
+                    {
+                      title: 'Financing activities',
+                      rows: [
+                        {
+                          label: 'Net cash from financing activities',
+                          value: statements.cashFlow.financing.toLocaleString(),
+                        },
+                      ],
+                    },
+                    {
+                      title: 'Cash reconciliation',
+                      rows: [
+                        {
+                          label: 'Opening cash balance',
+                          value: statements.cashFlow.openingCash.toLocaleString(),
+                        },
+                        {
+                          label: 'Net change in cash',
+                          value: (
+                            statements.cashFlow.operating +
+                            statements.cashFlow.investing +
+                            statements.cashFlow.financing
+                          ).toLocaleString(),
+                        },
+                        {
+                          label: 'Closing cash balance',
+                          value: statements.cashFlow.closingCash.toLocaleString(),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+              </div>
+            </section>
+          )}
+
+          {statementView === 'equity' && (
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Statement of Changes in Equity</h3>
+                  <span className="card-subtitle">For the selected period</span>
+                </div>
+                <StatementTable
+                  sections={[
+                    {
+                      title: 'Equity movement',
+                      rows: [
+                        {
+                          label: 'Opening equity',
+                          value: statements.equity.opening.toLocaleString(),
+                        },
+                        {
+                          label: 'Profit for the period',
+                          value: statements.equity.profit.toLocaleString(),
+                        },
+                        {
+                          label: 'Dividends / drawings',
+                          value: `(${statements.equity.dividends.toLocaleString()})`,
+                        },
+                        {
+                          label: 'Adjustments',
+                          value: statements.equity.adjustments.toLocaleString(),
+                        },
+                      ],
+                      total: {
+                        label: 'Closing equity',
+                        value: statements.equity.closing.toLocaleString(),
+                      },
+                    },
+                  ]}
+                />
+              </div>
+            </section>
+          )}
+        </>
+      )}
+
+      {activeTab === 'trial' && (
         <section className="grid grid-1">
           <div className="card">
             <div className="card-header">
@@ -478,66 +938,153 @@ export function FinancePage() {
             </div>
             <DataTable
               columns={[
-                { key: 'account', header: 'Account #' },
+                { key: 'code', header: 'Account #' },
                 { key: 'name', header: 'Account Name' },
-                { key: 'type', header: 'Type' },
                 {
                   key: 'balance',
-                  header: 'Balance (SGD)',
-                  render: (v) => v.toLocaleString(),
+                  header: 'Debit',
+                  render: (_, row) => (row.debit ? row.debit.toLocaleString() : ''),
                 },
-              ]}
-              data={glData}
-            />
-          </div>
-        </section>
-      )}
-
-      {activeTab === 'bank' && (
-        <section className="grid grid-1">
-          <div className="card">
-            <div className="card-header">
-              <h3>Bank Reconciliation</h3>
-              <span className="card-subtitle">Last reconciled: 2026-03-31</span>
-            </div>
-            <DataTable
-              columns={[
-                { key: 'date', header: 'Date' },
-                { key: 'reference', header: 'Reference' },
-                { key: 'type', header: 'Type' },
                 {
-                  key: 'amount',
-                  header: 'Amount (SGD)',
-                  render: (v) => (
-                    <span style={{ color: v < 0 ? 'var(--danger)' : 'inherit' }}>
-                      {v.toLocaleString()}
-                    </span>
-                  ),
+                  key: 'credit',
+                  header: 'Credit',
+                  render: (_, row) => (row.credit ? row.credit.toLocaleString() : ''),
                 },
               ]}
-              data={bankRec}
+              data={trialBalance.rows}
             />
+            <div className="trial-balance-footer">
+              <div className="trial-balance-totals">
+                <span>Total debit</span>
+                <span>{trialBalance.totals.debit.toLocaleString()}</span>
+              </div>
+              <div className="trial-balance-totals">
+                <span>Total credit</span>
+                <span>{trialBalance.totals.credit.toLocaleString()}</span>
+              </div>
+              <div className="trial-balance-status">
+                <Badge tone={trialBalance.balanced ? 'success' : 'danger'}>
+                  {trialBalance.balanced ? 'Balanced' : 'Out of balance'}
+                </Badge>
+              </div>
+            </div>
           </div>
         </section>
       )}
 
-      {activeTab === 'assets' && (
-        <section className="grid grid-1">
+      {activeTab === 'notes' && (
+        <section className="grid grid-2">
           <div className="card">
             <div className="card-header">
-              <h3>Fixed Assets</h3>
-              <span className="card-subtitle">Plant, Property & Equipment</span>
+              <h3>Accounting policies</h3>
+              <span className="card-subtitle">Basis of preparation</span>
             </div>
-            <DataTable
-              columns={[
-                { key: 'id', header: 'Asset ID' },
-                { key: 'name', header: 'Asset Name' },
-                { key: 'value', header: 'Original Value', render: (v) => v.toLocaleString() },
-                { key: 'depreciation', header: 'Accum. Depr.', render: (v) => v.toLocaleString() },
-                { key: 'net', header: 'Net Book Value', render: (v) => v.toLocaleString() },
-              ]}
-              data={fixedAssets}
-            />
+            <ul className="summary-list">
+              <li>
+                <span>Revenue recognition</span>
+                <span>
+                  Revenue from sale of goods is recognised when control transfers to customers,
+                  typically on delivery from Foods Pacific&apos;s warehouses.
+                </span>
+              </li>
+              <li>
+                <span>Functional currency</span>
+                <span>
+                  The functional currency of Foods Pacific Pte Ltd is Singapore Dollar (SGD).
+                </span>
+              </li>
+              <li>
+                <span>Measurement basis</span>
+                <span>
+                  Financial statements are prepared on a historical cost basis, except for certain
+                  financial instruments measured at fair value.
+                </span>
+              </li>
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Key estimates and judgements</h3>
+              <span className="card-subtitle">Critical areas of estimation</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Inventory valuation</span>
+                <span>
+                  Inventories are measured at the lower of cost and net realisable value using a
+                  standard cost approach calibrated to recent production runs.
+                </span>
+              </li>
+              <li>
+                <span>Depreciation</span>
+                <span>
+                  Production lines are depreciated on a straight-line basis over 8-10 years based on
+                  expected useful lives.
+                </span>
+              </li>
+              <li>
+                <span>Expected credit losses</span>
+                <span>
+                  Receivables are assessed against historical loss rates by customer segment and
+                  geography.
+                </span>
+              </li>
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Receivables and credit risk</h3>
+              <span className="card-subtitle">Trade receivables exposure</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Concentration</span>
+                <span>
+                  Top 5 customers account for approximately 62% of total trade receivables.
+                </span>
+              </li>
+              <li>
+                <span>Overdue balances</span>
+                <span>
+                  Overdue balances above 60 days are closely monitored with escalation to sales and
+                  finance.
+                </span>
+              </li>
+              <li>
+                <span>Credit insurance</span>
+                <span>
+                  Selected export customers are covered by credit insurance where commercially
+                  viable.
+                </span>
+              </li>
+            </ul>
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Contingencies and commitments</h3>
+              <span className="card-subtitle">Off-balance sheet items</span>
+            </div>
+            <ul className="summary-list">
+              <li>
+                <span>Operating leases</span>
+                <span>
+                  The Group leases warehouse space under cancellable operating lease arrangements.
+                </span>
+              </li>
+              <li>
+                <span>Supplier contracts</span>
+                <span>
+                  Long-term supply agreements exist for key agricultural inputs with volume
+                  commitments.
+                </span>
+              </li>
+              <li>
+                <span>Legal claims</span>
+                <span>
+                  At the reporting date, there are no material legal claims known to management.
+                </span>
+              </li>
+            </ul>
           </div>
         </section>
       )}

@@ -8,6 +8,29 @@ import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
 import { calculateEfficiency, canEditModule } from '../utils/permissions'
+import { calculateLandedCost, calculateVariance, calculateYield } from '../utils/metrics'
+
+const BOMS = [
+  {
+    id: 'BOM-001',
+    product: 'Premium Chili Sauce 500ml',
+    materials: [
+      { itemId: 'i1', name: 'Sunflower Oil', qty: 0.5, uom: 'kg' },
+      { itemId: 'i2', name: 'Chili Flakes', qty: 0.08, uom: 'kg' },
+      { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' },
+      { itemId: 'i6', name: 'Metal Cap 500ml', qty: 1, uom: 'pcs' },
+    ],
+  },
+  {
+    id: 'BOM-002',
+    product: 'Herb & Garlic Marinade 500ml',
+    materials: [
+      { itemId: 'i10', name: 'Canola Oil', qty: 0.55, uom: 'kg' },
+      { itemId: 'i3', name: 'Basil Leaves', qty: 0.15, uom: 'kg' },
+      { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' },
+    ],
+  },
+]
 
 export function ProductionPage() {
   const { productionOrders, inventory, createProductionOrder, updateProductionStatus } = useErp()
@@ -35,33 +58,141 @@ export function ProductionPage() {
     const overallEff = calculateEfficiency(actualOutput, plannedOutput)
     const downtime = delayed * 1.5
     const yieldPct = Math.min(99.9, 92 + completed * 0.3)
-    return { planned, running, completed, delayed, avgEff, plannedOutput, actualOutput, overallEff, downtime, yieldPct }
+    return {
+      planned,
+      running,
+      completed,
+      delayed,
+      avgEff,
+      plannedOutput,
+      actualOutput,
+      overallEff,
+      downtime,
+      yieldPct,
+    }
   }, [productionOrders])
 
-  useMemo(
+  const lineUtilizationRows = useMemo(() => {
+    const map = {}
+    productionOrders.forEach((order) => {
+      if (!map[order.line]) {
+        map[order.line] = { line: order.line, planned: 0, running: 0, completed: 0, delayed: 0 }
+      }
+      if (order.status === 'Planned') map[order.line].planned += 1
+      if (order.status === 'Running') map[order.line].running += 1
+      if (order.status === 'Completed') map[order.line].completed += 1
+      if (order.status === 'Delayed') map[order.line].delayed += 1
+    })
+    return Object.values(map).map((row) => {
+      const total = row.planned + row.running + row.completed + row.delayed || 1
+      const utilization = ((row.running + row.completed) / total) * 100
+      return {
+        ...row,
+        utilization,
+      }
+    })
+  }, [productionOrders])
+
+  const wipOrders = useMemo(
     () =>
-      productionOrders
-        .filter((p) => p.status === 'Completed' || p.status === 'Running')
-        .map((p) => ({
-          label: p.orderNumber,
-          value: p.efficiency ?? calculateEfficiency(p.producedQty || 0, p.plannedQty || 0),
-        })),
+      productionOrders.filter(
+        (p) => p.status === 'Running' || p.status === 'Delayed' || p.status === 'Planned',
+      ),
     [productionOrders],
   )
 
-  const boms = [
-    { id: 'BOM-001', product: 'Premium Chili Sauce 500ml', materials: [
-      { itemId: 'i1', name: 'Sunflower Oil', qty: 0.5, uom: 'kg' },
-      { itemId: 'i2', name: 'Chili Flakes', qty: 0.08, uom: 'kg' },
-      { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' },
-      { itemId: 'i6', name: 'Metal Cap 500ml', qty: 1, uom: 'pcs' }
-    ]},
-    { id: 'BOM-002', product: 'Herb & Garlic Marinade 500ml', materials: [
-      { itemId: 'i10', name: 'Canola Oil', qty: 0.55, uom: 'kg' },
-      { itemId: 'i3', name: 'Basil Leaves', qty: 0.15, uom: 'kg' },
-      { itemId: 'i5', name: 'Glass Bottle 500ml', qty: 1, uom: 'pcs' }
-    ]}
-  ]
+  const varianceRows = useMemo(
+    () =>
+      productionOrders.map((order) => {
+        const planned = order.plannedQty || 0
+        const actual = order.producedQty || 0
+        const variance = calculateVariance(planned, actual)
+        return {
+          orderNumber: order.orderNumber,
+          productId: order.productId,
+          line: order.line,
+          plannedQty: planned,
+          producedQty: actual,
+          varianceQty: variance.diff,
+          variancePct: variance.pct,
+        }
+      }),
+    [productionOrders],
+  )
+
+  const yieldRows = useMemo(
+    () =>
+      productionOrders.map((order) => {
+        const inputQty = order.rawMaterials?.reduce((sum, rm) => sum + rm.quantity, 0) || 0
+        const outputQty = order.producedQty || 0
+        const yieldPct = calculateYield(inputQty, outputQty)
+        return {
+          orderNumber: order.orderNumber,
+          productId: order.productId,
+          line: order.line,
+          inputQty,
+          outputQty,
+          yieldPct,
+        }
+      }),
+    [productionOrders],
+  )
+
+  const materialConsumptionRows = useMemo(
+    () => {
+      const rows = []
+      productionOrders.forEach((order) => {
+        order.rawMaterials?.forEach((rm) => {
+          const item = inventory.find((i) => i.id === rm.itemId)
+          rows.push({
+            orderNumber: order.orderNumber,
+            line: order.line,
+            sku: item?.sku ?? rm.itemId,
+            name: item?.name ?? rm.itemId,
+            qty: rm.quantity,
+            uom: rm.uom,
+          })
+        })
+      })
+      return rows
+    },
+    [inventory, productionOrders],
+  )
+
+  const bomCosting = useMemo(
+    () =>
+      BOMS.map((bom) => {
+        let materialCost = 0
+        let packagingCost = 0
+        bom.materials.forEach((mat) => {
+          const item = inventory.find((i) => i.id === mat.itemId)
+          const baseCost =
+            item?.estimatedCost ??
+            (item?.type === 'Raw' ? 3 : item?.type === 'Packaging' ? 0.25 : 1)
+          const componentCost = baseCost * mat.qty
+          if (item?.type === 'Packaging') packagingCost += componentCost
+          else materialCost += componentCost
+        })
+        const components = {
+          material: materialCost,
+          packaging: packagingCost,
+          labor: materialCost * 0.12,
+          machine: materialCost * 0.08,
+          transport: materialCost * 0.05,
+          wastage: materialCost * 0.03,
+          overhead: materialCost * 0.15,
+          qc: materialCost * 0.02,
+        }
+        const landed = calculateLandedCost(components, 1)
+        return {
+          bomId: bom.id,
+          product: bom.product,
+          components,
+          landed,
+        }
+      }),
+    [inventory],
+  )
 
   const canEdit = canEditModule(currentUser?.role, 'production')
 
@@ -191,23 +322,195 @@ export function ProductionPage() {
       </section>
 
       {activeTab === 'orders' && (
-        <section className="grid grid-1">
+        <>
+          <section className="grid grid-1">
+            <div className="card">
+              <div className="card-header">
+                <h3>Work orders</h3>
+                <span className="card-subtitle">By status and line</span>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'orderNumber', header: 'Order' },
+                  {
+                    key: 'productId',
+                    header: 'Product',
+                    render: (value) => inventory.find((i) => i.id === value)?.name ?? value,
+                  },
+                  { key: 'line', header: 'Line' },
+                  { key: 'plannedQty', header: 'Planned qty' },
+                  { key: 'producedQty', header: 'Produced' },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    render: (value) => {
+                      const tone =
+                        value === 'Completed'
+                          ? 'success'
+                          : value === 'Running'
+                            ? 'accent'
+                            : value === 'Delayed'
+                              ? 'danger'
+                              : 'neutral'
+                      return <Badge tone={tone}>{value}</Badge>
+                    },
+                  },
+                  {
+                    key: 'efficiency',
+                    header: 'Eff.',
+                    render: (value, row) => {
+                      const eff =
+                        value != null
+                          ? value
+                          : calculateEfficiency(row.producedQty || 0, row.plannedQty || 0)
+                      if (!eff) return '—'
+                      const tone = eff >= 95 ? 'success' : eff >= 85 ? 'accent' : 'danger'
+                      return <Badge tone={tone}>{`${eff.toFixed(1)}%`}</Badge>
+                    },
+                  },
+                  {
+                    key: 'actions',
+                    header: '',
+                    render: (_, row) => (
+                      <div className="table-actions">
+                        {canEdit && row.status === 'Planned' && (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => handleStatusChange(row.id, 'Running')}
+                          >
+                            Release
+                          </button>
+                        )}
+                        {canEdit && row.status === 'Running' && (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => handleStatusChange(row.id, 'Completed')}
+                          >
+                            Complete
+                          </button>
+                        )}
+                      </div>
+                    ),
+                  },
+                ]}
+                data={productionOrders}
+              />
+            </div>
+          </section>
+
+          <section className="grid grid-2">
+            <div className="card">
+              <div className="card-header">
+                <h3>Yield by order</h3>
+                <span className="card-subtitle">Input vs output for each batch</span>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'orderNumber', header: 'Order' },
+                  { key: 'productId', header: 'Product' },
+                  { key: 'line', header: 'Line' },
+                  { key: 'inputQty', header: 'Input qty (materials)' },
+                  { key: 'outputQty', header: 'Output qty' },
+                  {
+                    key: 'yieldPct',
+                    header: 'Yield (%)',
+                    render: (v) => v.toFixed(1),
+                  },
+                ]}
+                data={yieldRows}
+              />
+            </div>
+            <div className="card">
+              <div className="card-header">
+                <h3>Variance by order</h3>
+                <span className="card-subtitle">Planned vs actual production</span>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'orderNumber', header: 'Order' },
+                  { key: 'productId', header: 'Product' },
+                  { key: 'line', header: 'Line' },
+                  { key: 'plannedQty', header: 'Planned qty' },
+                  { key: 'producedQty', header: 'Produced qty' },
+                  {
+                    key: 'varianceQty',
+                    header: 'Variance (qty)',
+                    render: (v) => v.toLocaleString(),
+                  },
+                  {
+                    key: 'variancePct',
+                    header: 'Variance (%)',
+                    render: (v) => {
+                      const tone = v >= 0 ? 'success' : 'danger'
+                      const prefix = v >= 0 ? '+' : ''
+                      return <Badge tone={tone}>{`${prefix}${v.toFixed(1)}%`}</Badge>
+                    },
+                  },
+                ]}
+                data={varianceRows}
+              />
+            </div>
+          </section>
+
+          <section className="grid grid-1">
+            <div className="card">
+              <div className="card-header">
+                <h3>Material consumption by order</h3>
+                <span className="card-subtitle">Raw and packaging usage across batches</span>
+              </div>
+              <DataTable
+                columns={[
+                  { key: 'orderNumber', header: 'Order' },
+                  { key: 'line', header: 'Line' },
+                  { key: 'sku', header: 'SKU' },
+                  { key: 'name', header: 'Material' },
+                  { key: 'qty', header: 'Qty consumed' },
+                  { key: 'uom', header: 'UOM' },
+                ]}
+                data={materialConsumptionRows}
+              />
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'lines' && (
+        <section className="grid grid-2">
           <div className="card">
             <div className="card-header">
-              <h3>Work orders</h3>
-              <span className="card-subtitle">By status and line</span>
+              <h3>Line utilization</h3>
+              <span className="card-subtitle">Planned, running, completed, and delayed</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'line', header: 'Line' },
+                { key: 'planned', header: 'Planned' },
+                { key: 'running', header: 'Running' },
+                { key: 'completed', header: 'Completed' },
+                { key: 'delayed', header: 'Delayed' },
+                {
+                  key: 'utilization',
+                  header: 'Utilization (%)',
+                  render: (v) => v.toFixed(1),
+                },
+              ]}
+              data={lineUtilizationRows}
+            />
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>WIP orders</h3>
+              <span className="card-subtitle">Orders in planned, running, or delayed status</span>
             </div>
             <DataTable
               columns={[
                 { key: 'orderNumber', header: 'Order' },
-                {
-                  key: 'productId',
-                  header: 'Product',
-                  render: (value) => inventory.find((i) => i.id === value)?.name ?? value,
-                },
+                { key: 'productId', header: 'Product' },
                 { key: 'line', header: 'Line' },
                 { key: 'plannedQty', header: 'Planned qty' },
-                { key: 'producedQty', header: 'Produced' },
+                { key: 'producedQty', header: 'Produced qty' },
                 {
                   key: 'status',
                   header: 'Status',
@@ -223,118 +526,88 @@ export function ProductionPage() {
                     return <Badge tone={tone}>{value}</Badge>
                   },
                 },
-                {
-                  key: 'efficiency',
-                  header: 'Eff.',
-                  render: (value, row) => {
-                    const eff =
-                      value != null
-                        ? value
-                        : calculateEfficiency(row.producedQty || 0, row.plannedQty || 0)
-                    if (!eff) return '—'
-                    const tone = eff >= 95 ? 'success' : eff >= 85 ? 'accent' : 'danger'
-                    return <Badge tone={tone}>{`${eff.toFixed(1)}%`}</Badge>
-                  },
-                },
-                {
-                  key: 'actions',
-                  header: '',
-                  render: (_, row) => (
-                    <div className="table-actions">
-                      {canEdit && row.status === 'Planned' && (
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => handleStatusChange(row.id, 'Running')}
-                        >
-                          Release
-                        </button>
-                      )}
-                      {canEdit && row.status === 'Running' && (
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => handleStatusChange(row.id, 'Completed')}
-                        >
-                          Complete
-                        </button>
-                      )}
-                    </div>
-                  ),
-                },
               ]}
-              data={productionOrders}
+              data={wipOrders}
             />
-          </div>
-        </section>
-      )}
-
-      {activeTab === 'lines' && (
-        <section className="grid grid-2">
-          <div className="card">
-            <div className="card-header">
-              <h3>Active line loading</h3>
-              <span className="card-subtitle">Real-time throughput</span>
-            </div>
-            <ul className="summary-list">
-              <li>
-                <span>Sauce Line 1</span>
-                <span>Running • Chili sauce and teriyaki batches</span>
-              </li>
-              <li>
-                <span>Sauce Line 2</span>
-                <span>Completed • Herb marinade cycle closed</span>
-              </li>
-              <li>
-                <span>Sauce Line 3</span>
-                <span>Delayed • Investigating throughput variance</span>
-              </li>
-              <li>
-                <span>Export Line</span>
-                <span>Running • Export batch for EU partner</span>
-              </li>
-            </ul>
-          </div>
-          <div className="card">
-            <div className="card-header">
-              <h3>Raw Material Consumption</h3>
-              <span className="card-subtitle">WIP and staged materials</span>
-            </div>
-            <ul className="summary-list">
-              <li>
-                <span>Sunflower Oil</span>
-                <span>Consuming 2.8t for current PRO-2403001</span>
-              </li>
-              <li>
-                <span>Glass Bottles</span>
-                <span>40k units staged at Line 1 & 2</span>
-              </li>
-              <li>
-                <span>Chili Flakes</span>
-                <span>800kg reserved for next shift</span>
-              </li>
-            </ul>
           </div>
         </section>
       )}
 
       {activeTab === 'boms' && (
         <section className="grid grid-2">
-          {boms.map((bom) => (
-            <div key={bom.id} className="card">
-              <div className="card-header">
-                <h3>{bom.id}: {bom.product}</h3>
-              </div>
-              <DataTable
-                columns={[
-                  { key: 'name', header: 'Material' },
-                  { key: 'qty', header: 'Qty (per unit)' },
-                  { key: 'uom', header: 'UOM' },
-                ]}
-                data={bom.materials}
-              />
+          <div className="card">
+            <div className="card-header">
+              <h3>Bill of materials</h3>
+              <span className="card-subtitle">Per-unit recipe for key finished goods</span>
             </div>
-          ))}
+            {BOMS.map((bom) => (
+              <div key={bom.id} className="bom-block">
+                <h4>
+                  {bom.id}: {bom.product}
+                </h4>
+                <DataTable
+                  columns={[
+                    { key: 'name', header: 'Material' },
+                    { key: 'qty', header: 'Qty (per unit)' },
+                    { key: 'uom', header: 'UOM' },
+                  ]}
+                  data={bom.materials}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Landed cost breakdown</h3>
+              <span className="card-subtitle">Per-unit cost index across BOMs</span>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'bomId', header: 'BOM' },
+                { key: 'product', header: 'Product' },
+                {
+                  key: 'material',
+                  header: 'Material',
+                  render: (v) => v.toFixed(2),
+                },
+                {
+                  key: 'packaging',
+                  header: 'Packaging',
+                  render: (v) => v.toFixed(2),
+                },
+                {
+                  key: 'labor',
+                  header: 'Labor',
+                  render: (v) => v.toFixed(2),
+                },
+                {
+                  key: 'machine',
+                  header: 'Machine',
+                  render: (v) => v.toFixed(2),
+                },
+                {
+                  key: 'overhead',
+                  header: 'Overhead',
+                  render: (v) => v.toFixed(2),
+                },
+                {
+                  key: 'unit',
+                  header: 'Total cost / unit',
+                  render: (v) => v.toFixed(2),
+                },
+              ]}
+              data={bomCosting.map((row) => ({
+                bomId: row.bomId,
+                product: row.product,
+                material: row.components.material,
+                packaging: row.components.packaging,
+                labor: row.components.labor,
+                machine: row.components.machine,
+                overhead: row.components.overhead,
+                unit: row.landed.unit,
+              }))}
+            />
+          </div>
         </section>
       )}
 
