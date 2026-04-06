@@ -498,6 +498,40 @@
   margin-top: 16px;
 }
 
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: flex-end;
+}
+
+.filters-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.journal-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.journal-lines-header {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) 80px;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.journal-lines-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) 80px;
+  gap: 8px;
+}
+
 .grid-5 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }

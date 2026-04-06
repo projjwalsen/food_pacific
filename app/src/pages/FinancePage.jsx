@@ -11,7 +11,12 @@ import { useAuth } from '../context/AuthContext'
 import { useErp } from '../context/ErpContext'
 import { useToast } from '../context/ToastContext'
 import { canEditModule } from '../utils/permissions'
-import { generateFinancialStatements, generateTrialBalance } from '../utils/metrics'
+import {
+  buildLedgerFromJournalEntries,
+  generateFinancialStatements,
+  generateTrialBalance,
+  validateJournalBalance,
+} from '../utils/metrics'
 
 const invoiceLinesById = {
   inv1: [
@@ -161,7 +166,16 @@ const invoiceLinesById = {
 }
 
 export function FinancePage() {
-  const { invoices, payments, purchaseOrders, addInvoice, addPayment } = useErp()
+  const {
+    invoices,
+    payments,
+    purchaseOrders,
+    journalEntries,
+    ledgerAccounts,
+    addInvoice,
+    addPayment,
+    addJournalEntry,
+  } = useErp()
   const { currentUser } = useAuth()
   const { showToast } = useToast()
 
@@ -186,6 +200,40 @@ export function FinancePage() {
     method: 'Bank Transfer',
     currency: 'SGD',
   })
+  const [journalModalOpen, setJournalModalOpen] = useState(false)
+  const [journalDetailOpen, setJournalDetailOpen] = useState(false)
+  const [selectedJournal, setSelectedJournal] = useState(null)
+  const [journalFilters, setJournalFilters] = useState({
+    from: '',
+    to: '',
+    status: 'all',
+    accountCode: 'all',
+    search: '',
+  })
+  const [journalForm, setJournalForm] = useState({
+    date: '',
+    reference: '',
+    description: '',
+    status: 'Draft',
+    lines: [
+      { accountCode: '', debit: '', credit: '' },
+      { accountCode: '', debit: '', credit: '' },
+    ],
+  })
+  const [journalTotals, setJournalTotals] = useState({
+    totalDebit: 0,
+    totalCredit: 0,
+    balanced: false,
+  })
+  const [ledgerTabAccountCode, setLedgerTabAccountCode] = useState('1100')
+  const [ledgerFilters, setLedgerFilters] = useState({
+    from: '',
+    to: '',
+    type: 'all',
+    search: '',
+  })
+  const [ledgerDetailOpen, setLedgerDetailOpen] = useState(false)
+  const [selectedLedgerRow, setSelectedLedgerRow] = useState(null)
 
   const canEdit = canEditModule(currentUser?.role, 'finance')
 
@@ -224,80 +272,27 @@ export function FinancePage() {
     [invoices, payments, purchaseOrders],
   )
 
-  const trialBalance = generateTrialBalance([
-    {
-      code: '1000',
-      name: 'Cash and Cash Equivalents',
-      debit: statements.balanceSheet.assets.current.cash,
-      credit: 0,
-    },
-    {
-      code: '1100',
-      name: 'Accounts Receivable',
-      debit: statements.balanceSheet.assets.current.receivables,
-      credit: 0,
-    },
-    {
-      code: '1200',
-      name: 'Inventory',
-      debit: statements.balanceSheet.assets.current.inventory,
-      credit: 0,
-    },
-    {
-      code: '1300',
-      name: 'Property, Plant and Equipment',
-      debit: statements.balanceSheet.assets.nonCurrent.fixedAssets,
-      credit: 0,
-    },
-    {
-      code: '2000',
-      name: 'Accounts Payable',
-      debit: 0,
-      credit: statements.balanceSheet.liabilities.current.payables,
-    },
-    {
-      code: '2100',
-      name: 'Accruals',
-      debit: 0,
-      credit: statements.balanceSheet.liabilities.current.accruals,
-    },
-    {
-      code: '2200',
-      name: 'Term Loans',
-      debit: 0,
-      credit: statements.balanceSheet.liabilities.nonCurrent.loans,
-    },
-    {
-      code: '3000',
-      name: 'Share Capital',
-      debit: 0,
-      credit: statements.balanceSheet.equity.shareCapital,
-    },
-    {
-      code: '3100',
-      name: 'Retained Earnings',
-      debit: 0,
-      credit: statements.balanceSheet.equity.retainedEarnings,
-    },
-    {
-      code: '4000',
-      name: 'Revenue',
-      debit: 0,
-      credit: statements.pl.revenue,
-    },
-    {
-      code: '5000',
-      name: 'Cost of Goods Sold',
-      debit: statements.pl.cogs,
-      credit: 0,
-    },
-    {
-      code: '6000',
-      name: 'Operating Expenses',
-      debit: statements.pl.operatingExpenses,
-      credit: 0,
-    },
-  ])
+  const trialBalance = generateTrialBalance(
+    ledgerAccounts.map((acc) => {
+      const totals = journalEntries.reduce(
+        (res, j) => {
+          j.lines.forEach((line) => {
+            if (line.accountCode !== acc.code) return
+            res.debit += Number(line.debit || 0)
+            res.credit += Number(line.credit || 0)
+          })
+          return res
+        },
+        { debit: 0, credit: 0 },
+      )
+      return {
+        code: acc.code,
+        name: acc.name,
+        debit: totals.debit,
+        credit: totals.credit,
+      }
+    }),
+  )
 
   const selectedInvoiceLines = selectedInvoice
     ? invoiceLinesById[selectedInvoice.id] ?? []
@@ -319,6 +314,72 @@ export function FinancePage() {
     const balance = selectedInvoice.amount - totalPaid
     return { totalPaid, balance }
   }, [selectedInvoice, selectedInvoicePayments])
+
+  const filteredJournals = useMemo(() => {
+    return journalEntries.filter((j) => {
+      if (journalFilters.status !== 'all' && j.status !== journalFilters.status) return false
+      if (journalFilters.accountCode !== 'all') {
+        const hasAccount = j.lines.some((l) => l.accountCode === journalFilters.accountCode)
+        if (!hasAccount) return false
+      }
+      if (journalFilters.from && j.date < journalFilters.from) return false
+      if (journalFilters.to && j.date > journalFilters.to) return false
+      if (journalFilters.search) {
+        const term = journalFilters.search.toLowerCase()
+        const match =
+          j.journalNumber.toLowerCase().includes(term) ||
+          (j.reference ?? '').toLowerCase().includes(term) ||
+          (j.description ?? '').toLowerCase().includes(term)
+        if (!match) return false
+      }
+      return true
+    })
+  }, [journalEntries, journalFilters])
+
+  const selectedLedgerAccount = useMemo(
+    () => ledgerAccounts.find((a) => a.code === ledgerTabAccountCode) ?? ledgerAccounts[0],
+    [ledgerAccounts, ledgerTabAccountCode],
+  )
+
+  const fullLedger = useMemo(
+    () =>
+      buildLedgerFromJournalEntries(journalEntries, {
+        accountCode: selectedLedgerAccount?.code,
+        openingBalance: 0,
+      }),
+    [journalEntries, selectedLedgerAccount],
+  )
+
+  const filteredLedgerTransactions = useMemo(() => {
+    return fullLedger.transactions.filter((t) => {
+      if (ledgerFilters.from && t.date < ledgerFilters.from) return false
+      if (ledgerFilters.to && t.date > ledgerFilters.to) return false
+      if (ledgerFilters.type !== 'all') {
+        if ((ledgerFilters.type === 'invoice' && t.linkType !== 'Invoice') || (ledgerFilters.type === 'payment' && t.linkType !== 'Payment') || (ledgerFilters.type === 'journal' && t.linkType !== 'Manual')) {
+          return false
+        }
+      }
+      if (ledgerFilters.search) {
+        const term = ledgerFilters.search.toLowerCase()
+        const match =
+          (t.reference ?? '').toLowerCase().includes(term) ||
+          (t.description ?? '').toLowerCase().includes(term) ||
+          (t.journalNumber ?? '').toLowerCase().includes(term)
+        if (!match) return false
+      }
+      return true
+    })
+  }, [fullLedger.transactions, ledgerFilters])
+
+  function updateJournalTotals(nextLines) {
+    const totals = validateJournalBalance(
+      nextLines.map((l) => ({
+        debit: Number(l.debit || 0),
+        credit: Number(l.credit || 0),
+      })),
+    )
+    setJournalTotals(totals)
+  }
 
   function handleInvoiceSubmit(e) {
     e.preventDefault()
@@ -366,6 +427,114 @@ export function FinancePage() {
       currency: 'SGD',
     })
     showToast('Payment posted against selected invoice.', 'success')
+  }
+
+  function handleJournalFilterChange(key, value) {
+    setJournalFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }))
+  }
+
+  function handleJournalLineChange(index, key, value) {
+    setJournalForm((prev) => {
+      const lines = prev.lines.map((line, i) =>
+        i === index
+          ? {
+              ...line,
+              [key]: value,
+            }
+          : line,
+      )
+      updateJournalTotals(lines)
+      return {
+        ...prev,
+        lines,
+      }
+    })
+  }
+
+  function handleJournalAddLine() {
+    setJournalForm((prev) => {
+      const lines = [...prev.lines, { accountCode: '', debit: '', credit: '' }]
+      updateJournalTotals(lines)
+      return { ...prev, lines }
+    })
+  }
+
+  function handleJournalRemoveLine(index) {
+    setJournalForm((prev) => {
+      const lines = prev.lines.filter((_, i) => i !== index)
+      updateJournalTotals(lines)
+      return { ...prev, lines }
+    })
+  }
+
+  function handleJournalSubmit(e) {
+    e.preventDefault()
+    const preparedLines = journalForm.lines
+      .map((line) => {
+        const account = ledgerAccounts.find((a) => a.code === line.accountCode)
+        const debit = Number(line.debit || 0)
+        const credit = Number(line.credit || 0)
+        if (!account || (!debit && !credit)) {
+          return null
+        }
+        return {
+          accountCode: account.code,
+          accountName: account.name,
+          debit,
+          credit,
+        }
+      })
+      .filter(Boolean)
+
+    const totals = validateJournalBalance(preparedLines)
+    if (!totals.balanced) {
+      showToast('Journal is not balanced. Total debit must equal total credit.', 'danger')
+      return
+    }
+
+    const result = addJournalEntry(
+      {
+        date: journalForm.date,
+        reference: journalForm.reference,
+        description: journalForm.description,
+        status: journalForm.status,
+        lines: preparedLines,
+      },
+      currentUser,
+    )
+
+    if (!result?.success) {
+      showToast(result?.error ?? 'Unable to create journal entry.', 'danger')
+      return
+    }
+
+    setJournalModalOpen(false)
+    setJournalForm({
+      date: '',
+      reference: '',
+      description: '',
+      status: 'Draft',
+      lines: [
+        { accountCode: '', debit: '', credit: '' },
+        { accountCode: '', debit: '', credit: '' },
+      ],
+    })
+    setJournalTotals({
+      totalDebit: 0,
+      totalCredit: 0,
+      balanced: false,
+    })
+    showToast('Journal entry created.', 'success')
+  }
+
+  function handleLedgerFilterChange(key, value) {
+    setLedgerFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }))
   }
 
   return (
@@ -426,6 +595,18 @@ export function FinancePage() {
             onClick={() => setActiveTab('trial')}
           >
             Trial Balance
+          </button>
+          <button
+            className={`tab ${activeTab === 'journal' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('journal')}
+          >
+            Journal
+          </button>
+          <button
+            className={`tab ${activeTab === 'ledger' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('ledger')}
+          >
+            Individual Ledger
           </button>
           <button
             className={`tab ${activeTab === 'notes' ? 'tab-active' : ''}`}
@@ -591,6 +772,358 @@ export function FinancePage() {
             />
           </div>
         </section>
+      )}
+
+      {activeTab === 'journal' && (
+        <>
+          <section className="grid grid-4">
+            <StatCard
+              label="Journal entries"
+              value={journalEntries.length}
+              trend="Including opening balances and system postings"
+              tone="neutral"
+            />
+            <StatCard
+              label="Posted journals"
+              value={journalEntries.filter((j) => j.status === 'Posted').length}
+              trend="Ready for reporting"
+              tone="success"
+            />
+            <StatCard
+              label="Draft journals"
+              value={journalEntries.filter((j) => j.status === 'Draft').length}
+              trend="Work in progress"
+              tone="warning"
+            />
+            <StatCard
+              label="Approved journals"
+              value={journalEntries.filter((j) => j.status === 'Approved').length}
+              trend="Awaiting posting to ledger"
+              tone="accent"
+            />
+          </section>
+
+          <section className="grid grid-1">
+            <div className="card">
+              <div className="card-header card-header-spaced">
+                <div>
+                  <h3>Journal</h3>
+                  <span className="card-subtitle">
+                    Book-level view of accounting entries across cash, AR, AP, and revenue.
+                  </span>
+                </div>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    className="button primary"
+                    onClick={() => setJournalModalOpen(true)}
+                  >
+                    Add journal entry
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="filters-row">
+                <div className="filters-group">
+                  <label className="field">
+                    <span className="field-label">From</span>
+                    <input
+                      type="date"
+                      className="input"
+                      value={journalFilters.from}
+                      onChange={(e) => handleJournalFilterChange('from', e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">To</span>
+                    <input
+                      type="date"
+                      className="input"
+                      value={journalFilters.to}
+                      onChange={(e) => handleJournalFilterChange('to', e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Status</span>
+                    <select
+                      className="input input-select"
+                      value={journalFilters.status}
+                      onChange={(e) => handleJournalFilterChange('status', e.target.value)}
+                    >
+                      <option value="all">All</option>
+                      <option value="Draft">Draft</option>
+                      <option value="Posted">Posted</option>
+                      <option value="Approved">Approved</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Account</span>
+                    <select
+                      className="input input-select"
+                      value={journalFilters.accountCode}
+                      onChange={(e) => handleJournalFilterChange('accountCode', e.target.value)}
+                    >
+                      <option value="all">All accounts</option>
+                      {ledgerAccounts.map((acc) => (
+                        <option key={acc.code} value={acc.code}>
+                          {acc.code} — {acc.displayName ?? acc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="filters-group">
+                  <label className="field">
+                    <span className="field-label">Search</span>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Journal no., reference, description"
+                      value={journalFilters.search}
+                      onChange={(e) => handleJournalFilterChange('search', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <DataTable
+                columns={[
+                  { key: 'journalNumber', header: 'Journal No' },
+                  { key: 'date', header: 'Date' },
+                  { key: 'reference', header: 'Reference' },
+                  { key: 'description', header: 'Description' },
+                  {
+                    key: 'primaryAccount',
+                    header: 'Primary account',
+                    render: (_, row) => row.lines[0]?.accountName ?? 'Multiple',
+                  },
+                  {
+                    key: 'totalDebit',
+                    header: 'Debit',
+                    render: (v) => v.toLocaleString(),
+                  },
+                  {
+                    key: 'totalCredit',
+                    header: 'Credit',
+                    render: (v) => v.toLocaleString(),
+                  },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    render: (value) => {
+                      const tone =
+                        value === 'Posted'
+                          ? 'success'
+                          : value === 'Approved'
+                            ? 'accent'
+                            : 'warning'
+                      return <Badge tone={tone}>{value}</Badge>
+                    },
+                  },
+                  {
+                    key: 'createdBy',
+                    header: 'Created by',
+                  },
+                  {
+                    key: 'actions',
+                    header: '',
+                    render: (_, row) => (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => {
+                          setSelectedJournal(row)
+                          setJournalDetailOpen(true)
+                        }}
+                      >
+                        View
+                      </button>
+                    ),
+                  },
+                ]}
+                data={filteredJournals}
+              />
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'ledger' && (
+        <>
+          <section className="grid grid-1">
+            <div className="card">
+              <div className="card-header card-header-spaced">
+                <div>
+                  <h3>Individual ledger</h3>
+                  <span className="card-subtitle">
+                    Account-wise ledger with running balances from journal entries.
+                  </span>
+                </div>
+                <div className="button-group">
+                  <button
+                    type="button"
+                    className="button ghost"
+                    onClick={() =>
+                      showToast(
+                        `Exported ledger for ${selectedLedgerAccount?.displayName ?? selectedLedgerAccount?.name}.`,
+                        'info',
+                      )
+                    }
+                  >
+                    Export ledger
+                  </button>
+                  <button
+                    type="button"
+                    className="button ghost"
+                    onClick={() =>
+                      showToast(
+                        `Print preview for ledger ${selectedLedgerAccount?.displayName ?? selectedLedgerAccount?.name}.`,
+                        'info',
+                      )
+                    }
+                  >
+                    Print ledger
+                  </button>
+                </div>
+              </div>
+
+              <div className="filters-row">
+                <div className="filters-group">
+                  <label className="field">
+                    <span className="field-label">Account</span>
+                    <select
+                      className="input input-select"
+                      value={ledgerTabAccountCode}
+                      onChange={(e) => setLedgerTabAccountCode(e.target.value)}
+                    >
+                      {ledgerAccounts.map((acc) => (
+                        <option key={acc.code} value={acc.code}>
+                          {acc.code} — {acc.displayName ?? acc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">From</span>
+                    <input
+                      type="date"
+                      className="input"
+                      value={ledgerFilters.from}
+                      onChange={(e) => handleLedgerFilterChange('from', e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">To</span>
+                    <input
+                      type="date"
+                      className="input"
+                      value={ledgerFilters.to}
+                      onChange={(e) => handleLedgerFilterChange('to', e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Transaction type</span>
+                    <select
+                      className="input input-select"
+                      value={ledgerFilters.type}
+                      onChange={(e) => handleLedgerFilterChange('type', e.target.value)}
+                    >
+                      <option value="all">All</option>
+                      <option value="invoice">Invoices</option>
+                      <option value="payment">Payments</option>
+                      <option value="journal">Manual journals</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="filters-group">
+                  <label className="field">
+                    <span className="field-label">Search</span>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Reference, journal no., description"
+                      value={ledgerFilters.search}
+                      onChange={(e) => handleLedgerFilterChange('search', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <section className="grid grid-4">
+                <StatCard
+                  label="Opening balance"
+                  value={fullLedger.openingBalance.toLocaleString()}
+                  trend={selectedLedgerAccount?.displayName ?? selectedLedgerAccount?.name}
+                  tone="neutral"
+                />
+                <StatCard
+                  label="Total debit"
+                  value={fullLedger.totalDebit.toLocaleString()}
+                  trend="Debits in selected period"
+                  tone="primary"
+                />
+                <StatCard
+                  label="Total credit"
+                  value={fullLedger.totalCredit.toLocaleString()}
+                  trend="Credits in selected period"
+                  tone="primary"
+                />
+                <StatCard
+                  label="Closing balance"
+                  value={fullLedger.closingBalance.toLocaleString()}
+                  trend="Ledger closing balance"
+                  tone={fullLedger.closingBalance >= 0 ? 'success' : 'danger'}
+                />
+              </section>
+
+              <DataTable
+                columns={[
+                  { key: 'date', header: 'Date' },
+                  { key: 'journalNumber', header: 'Voucher / Ref No' },
+                  { key: 'reference', header: 'Reference' },
+                  { key: 'description', header: 'Description' },
+                  {
+                    key: 'debit',
+                    header: 'Debit',
+                    render: (v) => (v ? v.toLocaleString() : ''),
+                  },
+                  {
+                    key: 'credit',
+                    header: 'Credit',
+                    render: (v) => (v ? v.toLocaleString() : ''),
+                  },
+                  {
+                    key: 'balance',
+                    header: 'Running balance',
+                    render: (v) => v.toLocaleString(),
+                  },
+                  {
+                    key: 'source',
+                    header: 'Source',
+                    render: (_, row) => row.linkType ?? 'Journal',
+                  },
+                  {
+                    key: 'actions',
+                    header: '',
+                    render: (_, row) => (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => {
+                          setSelectedLedgerRow(row)
+                          setLedgerDetailOpen(true)
+                        }}
+                      >
+                        View
+                      </button>
+                    ),
+                  },
+                ]}
+                data={filteredLedgerTransactions}
+              />
+            </div>
+          </section>
+        </>
       )}
 
       {activeTab === 'statements' && (
@@ -1256,6 +1789,356 @@ export function FinancePage() {
                   ]}
                   data={selectedInvoicePayments}
                 />
+              </div>
+            </section>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={journalModalOpen}
+        onClose={() => setJournalModalOpen(false)}
+        title="Add journal entry"
+        size="lg"
+      >
+        <form className="form-grid" onSubmit={handleJournalSubmit}>
+          <label className="field">
+            <span className="field-label">Date</span>
+            <input
+              type="date"
+              className="input"
+              value={journalForm.date}
+              onChange={(e) => setJournalForm({ ...journalForm, date: e.target.value })}
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Reference</span>
+            <input
+              type="text"
+              className="input"
+              value={journalForm.reference}
+              onChange={(e) => setJournalForm({ ...journalForm, reference: e.target.value })}
+              placeholder="E.g. INV-2404009, PAY-2402010"
+            />
+          </label>
+          <label className="field field-full">
+            <span className="field-label">Narration</span>
+            <textarea
+              className="input"
+              rows={3}
+              value={journalForm.description}
+              onChange={(e) => setJournalForm({ ...journalForm, description: e.target.value })}
+              placeholder="Short description of the journal entry"
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Status</span>
+            <select
+              className="input input-select"
+              value={journalForm.status}
+              onChange={(e) => setJournalForm({ ...journalForm, status: e.target.value })}
+            >
+              <option value="Draft">Draft</option>
+              <option value="Posted">Posted</option>
+              <option value="Approved">Approved</option>
+            </select>
+          </label>
+
+          <div className="field field-full">
+            <span className="field-label">Line items</span>
+            <div className="journal-lines">
+              <div className="journal-lines-header">
+                <span>Account</span>
+                <span>Debit</span>
+                <span>Credit</span>
+                <span />
+              </div>
+              {journalForm.lines.map((line, index) => (
+                <div key={index} className="journal-lines-row">
+                  <select
+                    className="input input-select"
+                    value={line.accountCode}
+                    onChange={(e) => handleJournalLineChange(index, 'accountCode', e.target.value)}
+                  >
+                    <option value="">Select account</option>
+                    {ledgerAccounts.map((acc) => (
+                      <option key={acc.code} value={acc.code}>
+                        {acc.code} — {acc.displayName ?? acc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    className="input"
+                    value={line.debit}
+                    onChange={(e) => handleJournalLineChange(index, 'debit', e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className="input"
+                    value={line.credit}
+                    onChange={(e) => handleJournalLineChange(index, 'credit', e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => handleJournalRemoveLine(index)}
+                    disabled={journalForm.lines.length <= 2}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button type="button" className="button ghost" onClick={handleJournalAddLine}>
+                Add line
+              </button>
+            </div>
+          </div>
+
+          <div className="field field-full">
+            <div className="summary-list">
+              <div>
+                <span>Total debit</span>
+                <span>{journalTotals.totalDebit.toLocaleString()}</span>
+              </div>
+              <div>
+                <span>Total credit</span>
+                <span>{journalTotals.totalCredit.toLocaleString()}</span>
+              </div>
+              <div>
+                <span>Balance status</span>
+                <span>
+                  <Badge tone={journalTotals.balanced ? 'success' : 'danger'}>
+                    {journalTotals.balanced ? 'Balanced' : 'Out of balance'}
+                  </Badge>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button type="button" className="button ghost" onClick={() => setJournalModalOpen(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="button primary">
+              Save journal
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedJournal) && journalDetailOpen}
+        onClose={() => {
+          setJournalDetailOpen(false)
+          setSelectedJournal(null)
+        }}
+        title={selectedJournal ? `Journal ${selectedJournal.journalNumber}` : 'Journal details'}
+        size="lg"
+      >
+        {selectedJournal && (
+          <div className="form-grid">
+            <div className="card-header card-header-spaced">
+              <div>
+                <h3>{selectedJournal.reference || selectedJournal.journalNumber}</h3>
+                <span className="card-subtitle">
+                  {selectedJournal.date} • {selectedJournal.description}
+                </span>
+              </div>
+              <Badge
+                tone={
+                  selectedJournal.status === 'Posted'
+                    ? 'success'
+                    : selectedJournal.status === 'Approved'
+                      ? 'accent'
+                      : 'warning'
+                }
+              >
+                {selectedJournal.status}
+              </Badge>
+            </div>
+
+            <section className="grid grid-3">
+              <div>
+                <h4>Header</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Journal number</span>
+                    <span>{selectedJournal.journalNumber}</span>
+                  </li>
+                  <li>
+                    <span>Date</span>
+                    <span>{selectedJournal.date}</span>
+                  </li>
+                  <li>
+                    <span>Reference</span>
+                    <span>{selectedJournal.reference || 'N/A'}</span>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h4>Amounts</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Total debit</span>
+                    <span>{selectedJournal.totalDebit.toLocaleString()}</span>
+                  </li>
+                  <li>
+                    <span>Total credit</span>
+                    <span>{selectedJournal.totalCredit.toLocaleString()}</span>
+                  </li>
+                  <li>
+                    <span>Balanced</span>
+                    <Badge tone={selectedJournal.balanced ? 'success' : 'danger'}>
+                      {selectedJournal.balanced ? 'Yes' : 'No'}
+                    </Badge>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h4>Workflow</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Created by</span>
+                    <span>{selectedJournal.createdBy}</span>
+                  </li>
+                  <li>
+                    <span>Approved by</span>
+                    <span>{selectedJournal.approvedBy ?? 'Not set'}</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Line items</h3>
+                  <span className="card-subtitle">Debit and credit lines in this journal</span>
+                </div>
+                <DataTable
+                  columns={[
+                    { key: 'accountCode', header: 'Account code' },
+                    { key: 'accountName', header: 'Account' },
+                    {
+                      key: 'debit',
+                      header: 'Debit',
+                      render: (v) => (v ? v.toLocaleString() : ''),
+                    },
+                    {
+                      key: 'credit',
+                      header: 'Credit',
+                      render: (v) => (v ? v.toLocaleString() : ''),
+                    },
+                    {
+                      key: 'linkType',
+                      header: 'Source',
+                    },
+                  ]}
+                  data={selectedJournal.lines}
+                />
+              </div>
+            </section>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedLedgerRow) && ledgerDetailOpen}
+        onClose={() => {
+          setLedgerDetailOpen(false)
+          setSelectedLedgerRow(null)
+        }}
+        title="Ledger transaction details"
+        size="lg"
+      >
+        {selectedLedgerRow && (
+          <div className="form-grid">
+            <section className="grid grid-2">
+              <div>
+                <h4>Transaction</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Date</span>
+                    <span>{selectedLedgerRow.date}</span>
+                  </li>
+                  <li>
+                    <span>Journal number</span>
+                    <span>{selectedLedgerRow.journalNumber}</span>
+                  </li>
+                  <li>
+                    <span>Reference</span>
+                    <span>{selectedLedgerRow.reference || 'N/A'}</span>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h4>Amounts</h4>
+                <ul className="summary-list">
+                  <li>
+                    <span>Debit</span>
+                    <span>{selectedLedgerRow.debit.toLocaleString()}</span>
+                  </li>
+                  <li>
+                    <span>Credit</span>
+                    <span>{selectedLedgerRow.credit.toLocaleString()}</span>
+                  </li>
+                  <li>
+                    <span>Running balance</span>
+                    <span>{selectedLedgerRow.balance.toLocaleString()}</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="grid grid-1">
+              <div className="card">
+                <div className="card-header">
+                  <h3>Linked transactions</h3>
+                  <span className="card-subtitle">
+                    Derived from journal source such as invoice or payment.
+                  </span>
+                </div>
+                {selectedLedgerRow.linkType === 'Invoice' && (
+                  <DataTable
+                    columns={[
+                      { key: 'invoiceNumber', header: 'Invoice' },
+                      { key: 'customer', header: 'Customer' },
+                      { key: 'issueDate', header: 'Issue date' },
+                      {
+                        key: 'amount',
+                        header: 'Amount',
+                        render: (v, row) => `${row.currency} ${v.toLocaleString()}`,
+                      },
+                      { key: 'status', header: 'Status' },
+                    ]}
+                    data={invoices.filter((inv) => inv.id === selectedLedgerRow.linkId)}
+                  />
+                )}
+                {selectedLedgerRow.linkType === 'Payment' && (
+                  <DataTable
+                    columns={[
+                      { key: 'paymentNumber', header: 'Payment' },
+                      { key: 'invoiceId', header: 'Invoice ID' },
+                      { key: 'date', header: 'Date' },
+                      { key: 'method', header: 'Method' },
+                      {
+                        key: 'amount',
+                        header: 'Amount',
+                        render: (v, row) => `${row.currency} ${v.toLocaleString()}`,
+                      },
+                      { key: 'status', header: 'Status' },
+                    ]}
+                    data={payments.filter((p) => p.id === selectedLedgerRow.linkId)}
+                  />
+                )}
+                {selectedLedgerRow.linkType !== 'Invoice' &&
+                  selectedLedgerRow.linkType !== 'Payment' && (
+                    <div className="empty-state">
+                      This ledger row is linked to a manual or opening journal entry.
+                    </div>
+                  )}
               </div>
             </section>
           </div>

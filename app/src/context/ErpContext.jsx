@@ -5,6 +5,7 @@ import {
   invoices as initialInvoices,
   inventoryItems as initialInventory,
   initialSettings,
+  ledgerAccounts as initialLedgerAccounts,
   notifications as initialNotifications,
   payments as initialPayments,
   productionOrders as initialProductionOrders,
@@ -14,12 +15,18 @@ import {
   suppliers as initialSuppliers,
 } from '../data/dummyData'
 import { loadErpState, saveErpState } from '../utils/storage'
+import { generateJournalEntriesFromDummyData, validateJournalBalance } from '../utils/metrics'
 
 const ErpContext = createContext(null)
 
 function buildInitialState() {
   const persisted = typeof window !== 'undefined' ? loadErpState() : null
   if (persisted) return persisted
+
+  const journalEntries = generateJournalEntriesFromDummyData({
+    invoices: initialInvoices,
+    payments: initialPayments,
+  })
 
   return {
     users: demoUsers,
@@ -34,6 +41,8 @@ function buildInitialState() {
     auditLogs: initialAuditLogs,
     notifications: initialNotifications,
     settings: initialSettings,
+    journalEntries,
+    ledgerAccounts: initialLedgerAccounts,
   }
 }
 
@@ -430,6 +439,60 @@ export function ErpProvider({ children }) {
     })
   }
 
+  function addJournalEntry(entry, user) {
+    const totals = validateJournalBalance(entry.lines)
+    if (!totals.balanced) {
+      return {
+        success: false,
+        error: 'Journal entry is not balanced.',
+      }
+    }
+
+    const id = `j-${Date.now()}`
+    const journalNumber = `JRN-${String(Math.floor(Math.random() * 9000000) + 1000000)}`
+    const record = {
+      id,
+      journalNumber,
+      date: entry.date ?? new Date().toISOString().slice(0, 10),
+      reference: entry.reference ?? '',
+      description: entry.description ?? '',
+      status: entry.status ?? 'Draft',
+      createdBy: user?.name ?? 'Current user',
+      approvedBy: entry.approvedBy ?? null,
+      lines: entry.lines.map((line, index) => ({
+        id: line.id ?? `${id}-l${index + 1}`,
+        accountCode: line.accountCode,
+        accountName: line.accountName,
+        debit: Number(line.debit || 0),
+        credit: Number(line.credit || 0),
+        type: Number(line.debit || 0) > 0 ? 'DR' : 'CR',
+        linkType: line.linkType ?? 'Manual',
+        linkId: line.linkId ?? null,
+      })),
+      totalDebit: totals.totalDebit,
+      totalCredit: totals.totalCredit,
+      balanced: totals.balanced,
+    }
+
+    setState((prev) => ({
+      ...prev,
+      journalEntries: [record, ...prev.journalEntries],
+    }))
+
+    logAudit({
+      module: 'Finance',
+      action: 'Journal Entry Created',
+      details: `Journal ${journalNumber} created with total debit ${totals.totalDebit.toLocaleString()} and credit ${totals.totalCredit.toLocaleString()}.`,
+      severity: 'Info',
+      user,
+    })
+
+    return {
+      success: true,
+      entry: record,
+    }
+  }
+
   function addUser(userData, user) {
     const id = `u-${Date.now()}`
     const record = {
@@ -514,6 +577,8 @@ export function ErpProvider({ children }) {
         notifications: state.notifications,
         settings: state.settings,
         users: state.users,
+        journalEntries: state.journalEntries,
+        ledgerAccounts: state.ledgerAccounts,
         createRequisition,
         updateRequisitionStatus,
         createPurchaseOrderFromRequisition,
@@ -525,6 +590,7 @@ export function ErpProvider({ children }) {
         updateSalesStatus,
         addInvoice,
         addPayment,
+        addJournalEntry,
         addUser,
         updateUser,
         updateSettings,

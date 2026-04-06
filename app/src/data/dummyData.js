@@ -952,6 +952,117 @@ export const payments = [
   },
 ]
 
+export const ledgerAccounts = [
+  {
+    code: '1000',
+    name: 'Cash and Cash Equivalents',
+    displayName: 'Cash',
+    type: 'Asset',
+  },
+  {
+    code: '1010',
+    name: 'Bank Accounts',
+    displayName: 'Bank',
+    type: 'Asset',
+  },
+  {
+    code: '1100',
+    name: 'Accounts Receivable',
+    displayName: 'Accounts Receivable',
+    type: 'Asset',
+  },
+  {
+    code: '1200',
+    name: 'Inventory',
+    displayName: 'Inventory',
+    type: 'Asset',
+  },
+  {
+    code: '1300',
+    name: 'Property, Plant and Equipment',
+    displayName: 'Fixed Assets',
+    type: 'Asset',
+  },
+  {
+    code: '1400',
+    name: 'Finished Goods Inventory',
+    displayName: 'Finished Goods Inventory',
+    type: 'Asset',
+  },
+  {
+    code: '1500',
+    name: 'Raw Material Inventory',
+    displayName: 'Raw Material Inventory',
+    type: 'Asset',
+  },
+  {
+    code: '2000',
+    name: 'Accounts Payable',
+    displayName: 'Accounts Payable',
+    type: 'Liability',
+  },
+  {
+    code: '2100',
+    name: 'Accruals',
+    displayName: 'Accruals',
+    type: 'Liability',
+  },
+  {
+    code: '2200',
+    name: 'Term Loans',
+    displayName: 'Term Loans',
+    type: 'Liability',
+  },
+  {
+    code: '3000',
+    name: 'Share Capital',
+    displayName: 'Share Capital',
+    type: 'Equity',
+  },
+  {
+    code: '3100',
+    name: 'Retained Earnings',
+    displayName: 'Retained Earnings',
+    type: 'Equity',
+  },
+  {
+    code: '4000',
+    name: 'Sales Revenue',
+    displayName: 'Sales Revenue',
+    type: 'Income',
+  },
+  {
+    code: '5000',
+    name: 'Cost of Goods Sold',
+    displayName: 'Cost of Goods Sold',
+    type: 'Expense',
+  },
+  {
+    code: '6000',
+    name: 'Operating Expenses',
+    displayName: 'Operating Expenses',
+    type: 'Expense',
+  },
+  {
+    code: '6100',
+    name: 'Production Overhead',
+    displayName: 'Production Overhead',
+    type: 'Expense',
+  },
+  {
+    code: '6200',
+    name: 'Packaging Expense',
+    displayName: 'Packaging Expense',
+    type: 'Expense',
+  },
+  {
+    code: '6300',
+    name: 'Salary Expense',
+    displayName: 'Salary Expense',
+    type: 'Expense',
+  },
+]
+
 export const auditLogs = [
   {
     id: 'a1',
@@ -1141,4 +1252,3 @@ export const initialSettings = {
     loginAlerts: true,
   },
 }
-
